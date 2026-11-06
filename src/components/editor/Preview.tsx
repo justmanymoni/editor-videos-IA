@@ -1,0 +1,193 @@
+'use client';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import clsx from 'clsx';
+import { Loader2, Pause, Play, SkipBack, SkipForward, Upload, Volume2 } from 'lucide-react';
+import type { MediaInfo } from '@/lib/shared/types';
+import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
+import { mediaUrl } from '@/lib/client/api';
+import { useEditor } from '@/lib/client/store';
+import { useSegments, useSubtitlePages } from '@/lib/client/derived';
+import { deckKey, player, usePlayback } from '@/lib/client/player';
+import { useKeyedRefs } from '@/lib/client/hooks';
+import { formatTime } from '@/lib/client/format';
+import { uploadClips } from '@/lib/client/actions';
+import { IconButton, Segmented } from '@/components/ui';
+import { SubtitleOverlay } from './SubtitleOverlay';
+
+function useFitBox(ref: React.RefObject<HTMLDivElement | null>) {
+  const [size, setSize] = useState({ w: 270, h: 480 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const { width, height } = el.getBoundingClientRect();
+      const h = Math.max(160, Math.min(height, (width * 16) / 9));
+      setSize({ w: (h * 9) / 16, h });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return size;
+}
+
+function TimeDisplay() {
+  const time = usePlayback((s) => s.time);
+  const duration = usePlayback((s) => s.duration);
+  return (
+    <span className="font-mono text-xs text-muted tabular-nums">
+      <span className="text-fg">{formatTime(time)}</span> / {formatTime(duration)}
+    </span>
+  );
+}
+
+export function Preview() {
+  const doc = useEditor((s) => s.doc)!;
+  const media = useEditor((s) => s.media);
+  const segs = useSegments();
+  const pages = useSubtitlePages();
+  const playing = usePlayback((s) => s.playing);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { w, h } = useFitBox(boxRef);
+  const scale = w / OUTPUT_WIDTH;
+  const blur = doc.settings.fitMode === 'blur';
+
+  const deckRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | null) => player.registerDeck(key, el), []));
+  const overlayRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | HTMLImageElement | null) => player.registerOverlay(key, el), []));
+  const audioRef = useKeyedRefs(useCallback((key: string, el: HTMLAudioElement | null) => player.registerAudio(key, el), []));
+
+  useEffect(() => {
+    player.setTimeline(segs, doc.broll, doc.audio, doc.settings.mainVolume);
+  }, [segs, doc.broll, doc.audio, doc.settings.mainVolume]);
+
+  useEffect(() => {
+    player.setBlurCanvas(canvasRef.current, blur);
+  }, [blur]);
+
+  useEffect(() => () => player.pause(), []);
+
+  const mainMedia = [...new Set(doc.clips.map((c) => c.mediaId))].map((id) => media[id]).filter((m): m is MediaInfo => !!m);
+  const preparing = mainMedia.find((m) => m.status === 'processing' && m.stage?.startsWith('Optimizando'));
+  const sample = pages[0];
+
+  return (
+    <section className="flex min-w-0 flex-1 flex-col bg-[#060607]">
+      <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center p-4">
+        <div className="relative overflow-hidden rounded-lg bg-black shadow-2xl ring-1 ring-line" style={{ width: w, height: h }}>
+          <div className="absolute top-0 left-0 origin-top-left" style={{ width: OUTPUT_WIDTH, height: OUTPUT_HEIGHT, transform: `scale(${scale})` }}>
+            <canvas
+              ref={canvasRef}
+              width={54}
+              height={96}
+              className={clsx('absolute inset-0 h-full w-full', !blur && 'hidden')}
+              style={{ filter: 'blur(28px) brightness(0.8)', transform: 'scale(1.12)' }}
+            />
+            {mainMedia.map((m) =>
+              [0, 1].map((slot) => (
+                <video
+                  key={`${m.id}-${slot}`}
+                  ref={deckRef(deckKey(m.id, slot))}
+                  src={mediaUrl.preview(m)}
+                  preload="auto"
+                  playsInline
+                  className="absolute inset-0 h-full w-full"
+                  style={{ objectFit: blur ? 'contain' : 'cover', opacity: 0 }}
+                />
+              )),
+            )}
+            {doc.broll.map((b) => {
+              const m = media[b.mediaId];
+              if (!m) return null;
+              return m.kind === 'image' ? (
+                <img
+                  key={b.id}
+                  ref={overlayRef(b.id)}
+                  src={`/api/media/${m.id}/file`}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{ opacity: 0 }}
+                />
+              ) : (
+                <video
+                  key={b.id}
+                  ref={overlayRef(b.id)}
+                  src={mediaUrl.preview(m)}
+                  muted
+                  playsInline
+                  preload="auto"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  style={{ opacity: 0 }}
+                />
+              );
+            })}
+            <SubtitleOverlay pages={pages} style={doc.subtitles} sample={playing ? undefined : sample} />
+          </div>
+          {!doc.clips.length && (
+            <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted hover:text-fg">
+              <Upload size={28} />
+              <span>
+                Arrastra aquí tus clips en bruto
+                <br />
+                <span className="text-xs text-faint">mp4 o mov · varios a la vez</span>
+              </span>
+              <input type="file" multiple accept="video/*,.mov" hidden onChange={(e) => void uploadClips([...(e.target.files ?? [])])} />
+            </label>
+          )}
+          {preparing && (
+            <div className="absolute inset-x-3 top-3 flex items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs">
+              <Loader2 size={13} className="animate-spin text-accent" /> Preparando vista previa de {preparing.name}…{' '}
+              {Math.round(preparing.progress * 100)}%
+            </div>
+          )}
+        </div>
+      </div>
+      {doc.audio.map((a) => {
+        const m = media[a.mediaId];
+        return m ? <audio key={a.id} ref={audioRef(a.id)} src={`/api/media/${m.id}/file`} preload="auto" /> : null;
+      })}
+      <div className="flex h-12 shrink-0 items-center justify-center gap-3 border-t border-line px-4">
+        <IconButton label="Ir al principio (Inicio)" onClick={() => player.seek(0)}>
+          <SkipBack size={16} />
+        </IconButton>
+        <button
+          onClick={() => player.toggle()}
+          onMouseUp={(e) => e.currentTarget.blur()}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-black hover:bg-accent-strong"
+          aria-label={playing ? 'Pausar (espacio)' : 'Reproducir (espacio)'}
+          title={playing ? 'Pausar (espacio)' : 'Reproducir (espacio)'}
+        >
+          {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5" />}
+        </button>
+        <IconButton label="Ir al final (Fin)" onClick={() => player.seek(usePlayback.getState().duration)}>
+          <SkipForward size={16} />
+        </IconButton>
+        <TimeDisplay />
+        <div className="mx-2 h-5 w-px bg-line" />
+        <div className="w-44" title="Cómo encajar clips horizontales en 9:16">
+          <Segmented
+            value={doc.settings.fitMode}
+            onChange={(v) => useEditor.getState().commit((d) => void (d.settings.fitMode = v))}
+            options={[
+              { value: 'cover', label: 'Rellenar' },
+              { value: 'blur', label: 'Desenfoque' },
+            ]}
+          />
+        </div>
+        <label className="flex items-center gap-1.5 text-muted" title="Volumen del audio original">
+          <Volume2 size={14} />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={doc.settings.mainVolume}
+            onChange={(e) => useEditor.getState().commit((d) => void (d.settings.mainVolume = Number(e.target.value)), 'mainVolume')}
+            className="w-20"
+          />
+        </label>
+      </div>
+    </section>
+  );
+}

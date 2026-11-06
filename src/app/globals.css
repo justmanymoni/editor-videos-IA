@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-accent: #ffe600;
+  --color-accent-strong: #ffd400;
+  --color-bg: #0a0a0c;
+  --color-panel: #121215;
+  --color-panel-2: #18181d;
+  --color-panel-3: #212128;
+  --color-line: #26262e;
+  --color-line-strong: #34343e;
+  --color-fg: #ececf1;
+  --color-muted: #8d8d99;
+  --color-faint: #5d5d68;
+  --color-danger: #ff5c5c;
+  --color-cut-silence: #6b7280;
+  --color-cut-filler: #ff9f43;
+  --color-cut-retake: #b388ff;
+  --color-track-main: #2b6cb0;
+  --color-track-broll: #2f855a;
+  --color-track-audio: #b7791f;
+  --color-track-subs: #ffe600;
+  --font-sans: 'Inter UI', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@font-face {
+  font-family: 'Inter UI';
+  src: url('/fonts/ui/inter-400.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter UI';
+  src: url('/fonts/ui/inter-500.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter UI';
+  src: url('/fonts/ui/inter-600.ttf') format('truetype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter UI';
+  src: url('/fonts/ui/inter-700.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* Subtitle fonts: same files FFmpeg/libass uses on export. */
+@font-face {
+  font-family: 'vc-montserrat-black';
+  src: url('/fonts/montserrat-black.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-montserrat-extrabold';
+  src: url('/fonts/montserrat-extrabold.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-poppins-extrabold';
+  src: url('/fonts/poppins-extrabold.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-inter-extrabold';
+  src: url('/fonts/inter-extrabold.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-archivo-black';
+  src: url('/fonts/archivo-black.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-anton';
+  src: url('/fonts/anton.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-bebas-neue';
+  src: url('/fonts/bebas-neue.ttf') format('truetype');
+  font-display: block;
+}
+@font-face {
+  font-family: 'vc-luckiest-guy';
+  src: url('/fonts/luckiest-guy.ttf') format('truetype');
+  font-display: block;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+input[type='range'] {
+  accent-color: var(--color-accent);
+}
+
+/* Subtitle text in the preview: outline drawn behind the fill like libass. */
+.sub-text {
+  paint-order: stroke fill;
+  white-space: nowrap;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+.animate-indeterminate {
+  animation: indeterminate 1.4s ease-in-out infinite;
+}

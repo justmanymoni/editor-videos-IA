@@ -2,37 +2,39 @@
 
 Editor web de vídeos verticales **9:16** a partir de clips en bruto, con **edición basada en transcripción**: borras palabras del texto y se cortan del vídeo.
 
-Next.js 16 + TypeScript + Tailwind 4 · FFmpeg en el servidor · transcripción con la API de Whisper (OpenAI) o con whisper.cpp en local.
+**Funciona entero en tu ordenador: no necesita ninguna API** (ni OpenAI ni Claude). La voz se transcribe con [whisper.cpp](https://github.com/ggml-org/whisper.cpp), que la propia app descarga con un botón la primera vez.
+
+Next.js 16 + TypeScript + Tailwind 4 · FFmpeg · whisper.cpp local.
 
 ![Editor de Verticut](docs/editor.jpg)
 
 ## Qué hace
 
-| Función                  | Detalle                                                                                                                                                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Subida múltiple          | Arrastra varios mp4/mov a la vez. Cada clip aparece con miniatura, duración y estado, y se coloca en orden en la línea de tiempo.                                                                                                     |
-| Transcripción automática | Marcas de tiempo por palabra. Whisper API si hay `OPENAI_API_KEY`; si no, whisper.cpp local. Idioma por defecto: español.                                                                                                             |
-| Edición por texto        | Selecciona palabras (arrastrar o Shift+clic) y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar. Doble clic corrige el texto.        |
-| Auto-limpiar             | **Silencios** de más de 0,4 s (analizando el audio y los huecos de la transcripción), **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                              |
-| Subtítulos TikTok        | Palabra a palabra, texto blanco con la palabra activa en amarillo `#FFE600`, fuente bold, abajo y centrado. Fuente, colores, tamaño, contorno, sombra, posición, palabras por bloque y mayúsculas configurables, con estilos rápidos. |
-| Vista previa 9:16        | Reproduce la secuencia editada saltando los cortes. Clic en una palabra = salta a ese punto; la palabra que suena se resalta en la transcripción. Modo «Rellenar» o «Desenfoque» para clips horizontales.                             |
-| Línea de tiempo          | Pistas de vídeo principal, B-roll, audio/música y subtítulos. Mover, recortar (bordes) y dividir (S) clips; zoom con Ctrl+rueda.                                                                                                      |
-| B-roll                   | Carpeta de recursos (`recursos/`) con clips e imágenes que se arrastran a la pista. Sugerencias automáticas según las palabras clave de cada frase.                                                                                   |
-| Exportar                 | MP4 H.264 1080×1920 a 30 fps con los subtítulos incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                                                   |
-| Proyecto                 | Autoguardado en JSON (clips, cortes, B-roll, música y estilo de subtítulos). Descarga e importación del JSON. Deshacer/rehacer.                                                                                                       |
+| Función               | Detalle                                                                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Subida múltiple       | Arrastra varios mp4/mov a la vez. Cada clip aparece con miniatura, duración y estado, y se coloca en orden en la línea de tiempo.                                                                                                     |
+| Silencios automáticos | Al subir un clip se le quitan solos los silencios de más de 0,4 s (analizando el audio y los huecos de la transcripción). Se puede desactivar y deshacer.                                                                             |
+| Transcripción local   | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                                  |
+| Edición por texto     | Selecciona palabras (arrastrar o Shift+clic) y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar. Doble clic corrige el texto.        |
+| Tu guión              | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                                      |
+| Texto descargable     | El texto del vídeo queda en el panel derecho: cópialo o descárgalo en TXT, o como subtítulos SRT con tiempos.                                                                                                                         |
+| Auto-limpiar          | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                                     |
+| Subtítulos TikTok     | Palabra a palabra, texto blanco con la palabra activa en amarillo `#FFE600`, fuente bold, abajo y centrado. Fuente, colores, tamaño, contorno, sombra, posición, palabras por bloque y mayúsculas configurables, con estilos rápidos. |
+| Vista previa 9:16     | Reproduce la secuencia editada saltando los cortes. Clic en una palabra = salta a ese punto; la palabra que suena se resalta en la transcripción. Modo «Rellenar» o «Desenfoque» para clips horizontales.                             |
+| Línea de tiempo       | Pistas de vídeo principal, B-roll, audio/música y subtítulos. Mover, recortar (bordes) y dividir (S) clips; zoom con Ctrl+rueda.                                                                                                      |
+| B-roll                | Carpeta de recursos (`recursos/`) con clips e imágenes que se arrastran a la pista. Sugerencias automáticas según las palabras clave de cada frase.                                                                                   |
+| Exportar              | MP4 H.264 1080×1920 a 30 fps con los subtítulos incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                                                   |
+| Proyecto              | Autoguardado en JSON (clips, cortes, B-roll, música, guión y estilo de subtítulos). Descarga e importación del JSON. Deshacer/rehacer.                                                                                                |
 
 ## Requisitos
 
 - **Node.js 20** o superior.
-- **FFmpeg 6 o superior** con `libx264` y `libass` (los paquetes habituales los incluyen):
+- **FFmpeg 6 o superior** (incluye `ffprobe`):
+  - Windows: `winget install Gyan.FFmpeg`, y después cierra y vuelve a abrir la terminal.
   - macOS: `brew install ffmpeg`
-  - Windows: `winget install Gyan.FFmpeg`
   - Ubuntu/Debian: `sudo apt install ffmpeg`
-- Para transcribir, una de estas dos opciones:
-  - una clave de la API de OpenAI, o
-  - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) compilado y un modelo `ggml`.
 
-Comprueba FFmpeg con `ffmpeg -version`. Si no está en el `PATH`, indica su ruta en `FFMPEG_PATH` y `FFPROBE_PATH`.
+Comprueba FFmpeg con `ffprobe -version` en una terminal nueva. Si no está en el `PATH`, indica sus rutas en `.env.local` con barras normales, por ejemplo `FFPROBE_PATH=C:/ffmpeg/bin/ffprobe.exe` y `FFMPEG_PATH=C:/ffmpeg/bin/ffmpeg.exe`.
 
 ## Puesta en marcha
 
@@ -41,16 +43,12 @@ npm install
 ```
 
 ```bash
-cp .env.example .env.local
-```
-
-Edita `.env.local` (ver la sección siguiente) y arranca:
-
-```bash
 npm run dev
 ```
 
-Abre <http://localhost:3000>, crea un proyecto y arrastra tus clips.
+Abre <http://localhost:3000>. La primera vez, pulsa **Instalar** en la tarjeta «Transcripción local» (ver abajo). Después crea un proyecto y arrastra tus clips.
+
+`.env.local` es opcional: solo hace falta para cambiar rutas o ajustes (copia `.env.example`).
 
 Para usarlo sin recarga en caliente (más rápido):
 
@@ -62,78 +60,54 @@ npm run build
 npm start
 ```
 
-## Configurar la transcripción
+## Transcripción de voz a texto (local, sin API)
 
-La app elige el proveedor automáticamente: **OpenAI si hay clave**, si no **whisper.cpp** si encuentra el ejecutable y un modelo. Para forzar uno, usa `TRANSCRIBER=openai` o `TRANSCRIBER=whispercpp`. El proveedor activo aparece en la barra superior del editor.
+En la pantalla de inicio (o con la etiqueta «Instalar transcripción» de la barra superior del editor) elige un modelo y pulsa **Instalar**. La app descarga una sola vez:
 
-### Opción A: API de OpenAI (Whisper)
+- el motor **whisper.cpp** precompilado para tu sistema (unos 8 MB, desde GitHub), y
+- el **modelo de voz** elegido (desde Hugging Face):
 
-1. Crea una clave en <https://platform.openai.com/api-keys>.
-2. En `.env.local`:
+| Modelo  | Tamaño  | Cuándo usarlo                                                         |
+| ------- | ------- | --------------------------------------------------------------------- |
+| Preciso | ≈550 MB | Recomendado: la mejor calidad en español (`large-v3-turbo-q5_0`)      |
+| Rápido  | ≈470 MB | Transcribe bastante más deprisa con algo menos de precisión (`small`) |
+| Ligero  | ≈145 MB | Ordenadores modestos; comete más errores (`base`)                     |
 
-   ```dotenv
-   OPENAI_API_KEY=sk-...
-   OPENAI_TRANSCRIBE_MODEL=whisper-1
-   ```
+Todo se guarda en `storage/whisper/`. A partir de ahí la transcripción funciona sin internet y sin coste. Los clips que se subieron antes de instalarla se transcriben solos al terminar. Puedes cambiar de modelo cuando quieras.
 
-3. Reinicia `npm run dev` (las variables se leen al arrancar).
+- **Windows y Linux**: el motor se descarga solo.
+- **Mac**: instala antes el motor con `brew install whisper-cpp`; después el botón descarga el modelo.
+- Si en Windows aparece un error sobre «Visual C++ Redistributable», instálalo desde <https://aka.ms/vs/17/release/vc_redist.x64.exe>.
 
-Notas:
+El tiempo de transcripción depende del ordenador y del modelo: con «Preciso» en un portátil normal, cuenta con que tarde más o menos lo que dura el vídeo; «Rápido» y «Ligero» tardan bastante menos.
 
-- Se usa `whisper-1` porque es el modelo de OpenAI que devuelve marcas de tiempo por palabra. Los modelos `gpt-4o-*-transcribe` no las devuelven y no sirven aquí.
-- El audio se extrae a AAC mono de 48 kbps y se envía en trozos de 20 minutos, así que no hay problema con el límite de 25 MB.
-- La clave solo se usa en el servidor; nunca llega al navegador.
-- **Proveedores compatibles**: cualquier API con el mismo endpoint `/audio/transcriptions` y `timestamp_granularities[]=word`. Por ejemplo Groq:
+### Opcional: usar tu propia instalación de whisper.cpp
 
-  ```dotenv
-  OPENAI_API_KEY=gsk_...
-  OPENAI_BASE_URL=https://api.groq.com/openai/v1
-  OPENAI_TRANSCRIBE_MODEL=whisper-large-v3
-  ```
+Si ya tienes whisper.cpp, indica en `.env.local` las rutas del ejecutable y del modelo:
 
-### Opción B: whisper.cpp en local (sin clave, gratis)
+```dotenv
+WHISPER_CPP_BIN=/ruta/a/whisper.cpp/build/bin/whisper-cli
+WHISPER_CPP_MODEL=/ruta/a/whisper.cpp/models/ggml-large-v3-turbo.bin
+```
 
-1. Compila whisper.cpp y descarga un modelo:
+### Opcional: API de OpenAI
 
-   ```bash
-   git clone https://github.com/ggml-org/whisper.cpp
-   ```
-
-   ```bash
-   cd whisper.cpp && cmake -B build && cmake --build build -j --config Release
-   ```
-
-   ```bash
-   sh ./models/download-ggml-model.sh large-v3-turbo
-   ```
-
-   En macOS también vale `brew install whisper-cpp` (instala `whisper-cli`); el modelo se descarga igual.
-   `large-v3-turbo` da la mejor calidad en español; `small` o `base` son más rápidos en equipos modestos.
-
-2. En `.env.local`, apunta al ejecutable y al modelo:
-
-   ```dotenv
-   WHISPER_CPP_BIN=/ruta/a/whisper.cpp/build/bin/whisper-cli
-   WHISPER_CPP_MODEL=/ruta/a/whisper.cpp/models/ggml-large-v3-turbo.bin
-   WHISPER_CPP_THREADS=8
-   ```
-
-   Alternativa sin variables: `whisper-cli` en el `PATH` y el modelo dentro de la carpeta `models/` del proyecto (se elige el mejor `ggml-*.bin` que haya).
-
-La app llama a `whisper-cli` con `-ml 1 -sow -oj` (un segmento por palabra en JSON) y muestra el progreso que imprime `-pp`.
+No hace falta, pero si prefieres transcribir en la nube pon en `.env.local` `OPENAI_API_KEY=sk-...` y `TRANSCRIBER=openai` (se usa el modelo `whisper-1`, el que da tiempos por palabra). Sin `TRANSCRIBER=openai`, la clave solo se usa cuando no hay transcripción local instalada. También vale cualquier API compatible cambiando `OPENAI_BASE_URL` (por ejemplo Groq con `whisper-large-v3`).
 
 ### Sobre las muletillas
 
-Whisper tiende a «limpiar» las vacilaciones y a no escribir «eh» o «mm». Para que las conserve, se le envía un texto de contexto lleno de muletillas (`TRANSCRIPTION_PROMPT`, se puede cambiar). Aun así, si alguna no aparece en el texto, el botón **Silencios** la quita igualmente porque detecta el hueco en la transcripción.
+Whisper tiende a «limpiar» las vacilaciones y a no escribir «eh» o «mm». Para que las conserve, se le da un texto de contexto lleno de muletillas (`TRANSCRIPTION_PROMPT`, se puede cambiar). Aun así, si alguna no aparece en el texto, el quitado de silencios la elimina igualmente porque detecta el hueco en la transcripción.
 
 ## Flujo de trabajo
 
-1. **Sube los clips**: arrástralos a la ventana o al panel izquierdo. Se transcriben en segundo plano; el progreso se ve en el panel y en la transcripción.
-2. **Limpia**: en el panel derecho, _Silencios_, _Muletillas_, _Tomas repetidas_ o _Limpiar todo_. El aviso indica cuánto se ha recortado. Cada limpieza se puede repetir con otros ajustes (icono de ajustes) o deshacer.
+1. **Sube los clips**: arrástralos a la ventana o al panel izquierdo. Se analizan y se transcriben en segundo plano; el progreso se ve en el panel y en la transcripción. En cuanto terminan, **se les quitan los silencios automáticamente** (desactivable en los ajustes de «Auto-limpiar»).
+2. **Limpia más** si quieres: en el panel derecho, _Muletillas_, _Tomas repetidas_ o _Limpiar todo_. El aviso indica cuánto se ha recortado. Todo se puede deshacer o restaurar.
 3. **Edita el texto**: selecciona y pulsa Supr para cortar, o usa la barra flotante (Cortar, Restaurar, Reproducir, Ocultar en subtítulos, Empezar subtítulo aquí). Las etiquetas grises entre palabras son pausas: clic para quitarlas o recuperarlas.
-4. **Subtítulos**: pestaña _Estilo de subtítulos_. Lo que ves en la vista previa es lo que se incrusta en el MP4 (mismas fuentes y métricas).
-5. **B-roll y música**: pestañas _B-roll_ y _Música_ del panel izquierdo. Arrastra a su pista o pulsa + para añadir en el cursor.
-6. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
+4. **Tu guión (opcional)**: botón _Guión_ de la barra «Texto». Pega lo que escribiste (o abre un .txt) y pulsa _Aplicar a los subtítulos_: se sincroniza con tu voz y los subtítulos usan tus palabras exactas. El guión se guarda en el proyecto.
+5. **Descarga el texto**: en la barra «Texto», _Copiar_, _TXT_ (el texto del vídeo final) o _SRT_ (subtítulos con tiempos para YouTube, CapCut, etc.).
+6. **Subtítulos**: pestaña _Estilo de subtítulos_: estilos rápidos, fuente, tamaño, colores del texto y de la palabra activa, contorno, sombra, posición, palabras por bloque, mayúsculas y puntuación. Lo que ves en la vista previa es lo que se incrusta en el MP4.
+7. **B-roll y música**: pestañas _B-roll_ y _Música_ del panel izquierdo. Arrastra a su pista o pulsa + para añadir en el cursor.
+8. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
 
 Colores del texto tachado: rojo = corte manual, naranja = muletilla, morado = toma repetida, gris = silencio.
 
@@ -235,24 +209,26 @@ src/
 
 Todas están documentadas en [`.env.example`](.env.example). Las principales:
 
-| Variable                                | Por defecto                               | Uso                                                                   |
-| --------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| `OPENAI_API_KEY`                        | —                                         | Activa la transcripción con la API                                    |
-| `OPENAI_BASE_URL`                       | `https://api.openai.com/v1`               | Para proveedores compatibles                                          |
-| `OPENAI_TRANSCRIBE_MODEL`               | `whisper-1`                               | Modelo con marcas por palabra                                         |
-| `WHISPER_CPP_BIN` / `WHISPER_CPP_MODEL` | busca `whisper-cli` y `models/ggml-*.bin` | whisper.cpp local                                                     |
-| `TRANSCRIBER`                           | automático                                | `openai` o `whispercpp`                                               |
-| `DEFAULT_LANGUAGE`                      | `es`                                      | Idioma de la transcripción                                            |
-| `STORAGE_DIR`                           | `./storage`                               | Clips subidos, proyectos y exportaciones                              |
-| `BROLL_DIR`                             | `./recursos`                              | Carpeta de recursos                                                   |
-| `FFMPEG_PATH` / `FFPROBE_PATH`          | `ffmpeg` / `ffprobe`                      | Rutas de FFmpeg                                                       |
-| `ALWAYS_PROXY`                          | `0`                                       | `1` crea siempre un proxy (vista previa más fluida con muchos cortes) |
-| `TRANSCRIBE_CONCURRENCY`                | `1`                                       | Transcripciones simultáneas                                           |
+| Variable                                | Por defecto                 | Uso                                                                   |
+| --------------------------------------- | --------------------------- | --------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                        | —                           | Opcional: transcripción en la nube con OpenAI                         |
+| `OPENAI_BASE_URL`                       | `https://api.openai.com/v1` | Para proveedores compatibles                                          |
+| `OPENAI_TRANSCRIBE_MODEL`               | `whisper-1`                 | Modelo con marcas por palabra                                         |
+| `WHISPER_CPP_BIN` / `WHISPER_CPP_MODEL` | lo instalado por la app     | Tu propia instalación de whisper.cpp                                  |
+| `TRANSCRIBER`                           | local si está instalada     | `openai` para forzar la API                                           |
+| `DEFAULT_LANGUAGE`                      | `es`                        | Idioma de la transcripción                                            |
+| `STORAGE_DIR`                           | `./storage`                 | Clips subidos, proyectos y exportaciones                              |
+| `BROLL_DIR`                             | `./recursos`                | Carpeta de recursos                                                   |
+| `FFMPEG_PATH` / `FFPROBE_PATH`          | `ffmpeg` / `ffprobe`        | Rutas de FFmpeg                                                       |
+| `ALWAYS_PROXY`                          | `0`                         | `1` crea siempre un proxy (vista previa más fluida con muchos cortes) |
+| `TRANSCRIBE_CONCURRENCY`                | `1`                         | Transcripciones simultáneas                                           |
 
 ## Solución de problemas
 
-- **«Sin transcriptor» en la barra superior**: falta `OPENAI_API_KEY` o whisper.cpp. Revisa `.env.local` y reinicia el servidor. Sin transcriptor puedes editar igualmente y quitar silencios con el análisis de audio.
-- **Error 401 al transcribir**: la clave no es válida o no tiene saldo.
+- **«No se encuentra el ejecutable ffprobe»**: falta FFmpeg. En Windows, `winget install Gyan.FFmpeg`, cierra todas las terminales (y VS Code) y vuelve a lanzar `npm run dev` en una nueva.
+- **«Instalar transcripción» en la barra superior**: falta la transcripción local. Púlsalo e instálala; mientras, puedes editar y quitar silencios igualmente.
+- **La descarga del modelo falla**: comprueba la conexión y vuelve a pulsar Instalar; lo ya descargado se reutiliza.
+- **Error de «Visual C++ Redistributable» (Windows)**: instálalo desde <https://aka.ms/vs/17/release/vc_redist.x64.exe>.
 - **«No se encuentra el ejecutable ffmpeg»**: instala FFmpeg o indica `FFMPEG_PATH`.
 - **Un clip tarda en verse**: si es HEVC/4K se está creando el proxy de vista previa; el progreso aparece sobre el vídeo.
 - **La vista previa da pequeños saltos en los cortes**: es normal en el navegador; el MP4 exportado es exacto. Con `ALWAYS_PROXY=1` los saltos son más suaves.

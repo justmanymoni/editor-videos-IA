@@ -158,6 +158,15 @@ export function ffmpegVersion(): Promise<string | null> {
   return versionCache;
 }
 
+/** True when ffprobe can be executed (not cached: it may be installed while the app runs). */
+export async function ffprobeAvailable(): Promise<boolean> {
+  try {
+    return (await run(config.ffprobe, ['-version'], {})).code === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Major version; git builds ("N-…") count as recent. */
 export async function ffmpegMajor(): Promise<number> {
   const v = await ffmpegVersion();

@@ -75,6 +75,7 @@ export function enqueueIngest(id: string) {
           { signal: ctx.signal },
         );
         hasThumb = true;
+        await updateMedia(id, { hasThumb });
         ctx.progress(0.1);
       }
 
@@ -83,6 +84,7 @@ export function enqueueIngest(id: string) {
         const env = await computeEnvelope(rec.sourcePath, ctx.signal);
         await writeFile(paths.envelope, env);
         hasEnvelope = true;
+        await updateMedia(id, { hasEnvelope });
         ctx.progress(0.25);
       }
 

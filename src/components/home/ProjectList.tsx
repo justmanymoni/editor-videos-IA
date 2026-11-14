@@ -6,6 +6,7 @@ import { FileUp, Plus, Trash2 } from 'lucide-react';
 import type { ProjectDoc, ProjectSummary, ServerStatus } from '@/lib/shared/types';
 import { api } from '@/lib/client/api';
 import { Button, IconButton } from '@/components/ui';
+import { LocalTranscription } from '@/components/LocalTranscription';
 
 export function ProjectList() {
   const router = useRouter();
@@ -47,20 +48,18 @@ export function ProjectList() {
         </div>
       </header>
 
-      {status && status.transcriber === 'none' && (
+      {status && (!status.ffmpeg || !status.ffprobe) && (
         <div className="rounded-lg border border-danger/40 bg-danger/5 p-4 text-sm">
-          <p className="font-semibold text-danger">No hay transcriptor configurado</p>
+          <p className="font-semibold text-danger">Falta FFmpeg{status.ffmpeg ? ' (no se encuentra ffprobe)' : ''}</p>
           <p className="mt-1 text-muted">
-            {status.transcriberDetail}. Añade <code className="text-fg">OPENAI_API_KEY</code> en <code className="text-fg">.env.local</code> o instala
-            whisper.cpp (ver README). Puedes editar igualmente: el quitado de silencios funciona con el análisis del audio.
+            La app lo necesita para leer y exportar los vídeos. En Windows instálalo con <code className="text-fg">winget install Gyan.FFmpeg</code>,
+            cierra todas las terminales y vuelve a ejecutar <code className="text-fg">npm run dev</code> en una nueva. En Mac:{' '}
+            <code className="text-fg">brew install ffmpeg</code>.
           </p>
         </div>
       )}
-      {status && !status.ffmpeg && (
-        <div className="rounded-lg border border-danger/40 bg-danger/5 p-4 text-sm text-danger">
-          No se encuentra FFmpeg. Instálalo y reinicia el servidor.
-        </div>
-      )}
+
+      <LocalTranscription status={status} onInstalled={setStatus} />
 
       <form
         className="flex gap-2"

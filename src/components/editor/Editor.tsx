@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
-import { useAutosave, useMediaSync, useShortcuts } from '@/lib/client/hooks';
+import { useAutoSilence, useAutosave, useMediaSync, useShortcuts } from '@/lib/client/hooks';
 import { refreshResources, uploadClips } from '@/lib/client/actions';
 import { player } from '@/lib/client/player';
-import { Toasts } from '@/components/ui';
+import { Modal, Toasts } from '@/components/ui';
+import { LocalTranscription } from '@/components/LocalTranscription';
+import type { ServerStatus } from '@/lib/shared/types';
 import { TopBar } from './TopBar';
 import { MediaPanel } from './MediaPanel';
 import { Preview } from './Preview';
@@ -15,8 +17,18 @@ import { Timeline } from './Timeline';
 import { ExportDialog } from './ExportDialog';
 import { ShortcutsHelp } from './ShortcutsHelp';
 
+/** After installing local transcription, reload clip states: the server re-queues pending ones. */
+async function onTranscriberInstalled(status: ServerStatus) {
+  const s = useEditor.getState();
+  s.set({ status });
+  if (s.doc) s.upsertMedia(await api.media(s.doc.media));
+  s.toast('Transcripción local lista. Tus clips se están transcribiendo.', 'success');
+}
+
 export default function Editor({ projectId }: { projectId: string }) {
   const doc = useEditor((s) => s.doc);
+  const status = useEditor((s) => s.status);
+  const setupOpen = useEditor((s) => s.setupOpen);
   const [error, setError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -48,6 +60,7 @@ export default function Editor({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   useMediaSync();
+  useAutoSilence();
   const saveNow = useAutosave();
   const openHelp = useCallback(() => setHelpOpen(true), []);
   useShortcuts(saveNow, openHelp);
@@ -98,6 +111,9 @@ export default function Editor({ projectId }: { projectId: string }) {
       )}
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
       <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <Modal open={setupOpen} onClose={() => useEditor.getState().set({ setupOpen: false })} title="Transcripción de voz a texto">
+        <LocalTranscription status={status} onInstalled={onTranscriberInstalled} />
+      </Modal>
       <Toasts />
     </div>
   );

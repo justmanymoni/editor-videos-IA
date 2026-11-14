@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { existsSync, readdirSync } from 'node:fs';
+import os from 'node:os';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { WHISPER_MODEL_RANK } from '../shared/whisper-models';
 
 /**
  * Runtime configuration from environment variables (.env.local).
@@ -43,7 +45,11 @@ export const config = {
     return (process.env.TRANSCRIBER || '').toLowerCase();
   },
   get whisperThreads() {
-    return Number(process.env.WHISPER_CPP_THREADS) || 4;
+    return Number(process.env.WHISPER_CPP_THREADS) || Math.max(2, Math.min(8, os.availableParallelism() - 1));
+  },
+  /** Where the app installs whisper.cpp and its models (storage/whisper). */
+  get whisperDir() {
+    return path.join(this.storageDir, 'whisper');
   },
   /** Words that help Whisper keep hesitations ("eh", "mm"…) in the transcript. */
   get transcriptionPrompt() {
@@ -65,41 +71,80 @@ function findOnPath(names: string[]): string | null {
   return null;
 }
 
-/** whisper.cpp binary: WHISPER_CPP_BIN or whisper-cli / whisper-cpp on PATH. */
+const BINARY_NAMES = ['whisper-cli', 'whisper-cpp'];
+
+/** Looks for whisper-cli inside a folder (the engine the app installed). */
+function findBinaryIn(dir: string, depth = 0): string | null {
+  if (depth > 3 || !existsSync(dir)) return null;
+  const entries = readdirSync(dir, { withFileTypes: true });
+  for (const e of entries) {
+    if (e.isFile() && BINARY_NAMES.some((n) => e.name === n || e.name === `${n}.exe`)) return path.join(dir, e.name);
+  }
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      const found = findBinaryIn(path.join(dir, e.name), depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** whisper.cpp executable: WHISPER_CPP_BIN, the copy installed by the app, or whisper-cli on PATH. */
 export function whisperCppBinary(): string | null {
   const configured = process.env.WHISPER_CPP_BIN;
   if (configured) return existsSync(configured) ? configured : null;
-  return findOnPath(['whisper-cli', 'whisper-cpp']);
+  return findBinaryIn(path.join(config.whisperDir, 'bin')) ?? findOnPath(BINARY_NAMES);
 }
 
-/** whisper.cpp model: WHISPER_CPP_MODEL or the best ggml-*.bin inside ./models. */
+const rankOf = (file: string) => {
+  const r = WHISPER_MODEL_RANK.findIndex((x) => file.includes(x));
+  return r < 0 ? 99 : r;
+};
+
+function bestModelIn(dir: string): string | null {
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter((f) => /^ggml-.*\.bin$/.test(f) && !f.startsWith('ggml-silero'))
+    .sort((a, b) => rankOf(a) - rankOf(b));
+  return files[0] ? path.join(dir, files[0]) : null;
+}
+
+/** Model chosen in the app's installer (storage/whisper/config.json), if still present. */
+function preferredModel(): string | null {
+  try {
+    const { model } = JSON.parse(readFileSync(path.join(config.whisperDir, 'config.json'), 'utf8')) as { model?: string };
+    const file = model && path.join(config.whisperDir, 'models', `ggml-${model}.bin`);
+    return file && existsSync(file) ? file : null;
+  } catch {
+    return null;
+  }
+}
+
+/** whisper.cpp model: WHISPER_CPP_MODEL, the one chosen in the installer, or the best ggml-*.bin found. */
 export function whisperCppModel(): string | null {
   const configured = process.env.WHISPER_CPP_MODEL;
   if (configured) return existsSync(configured) ? path.resolve(/*turbopackIgnore: true*/ root(), configured) : null;
-  const dir = path.join(/*turbopackIgnore: true*/ root(), 'models');
-  if (!existsSync(dir)) return null;
-  const files = readdirSync(dir).filter((f) => /^ggml-.*\.bin$/.test(f));
-  const rank = ['large-v3-turbo', 'large-v3', 'large', 'medium', 'small', 'base', 'tiny'];
-  files.sort((a, b) => {
-    const ra = rank.findIndex((r) => a.includes(r));
-    const rb = rank.findIndex((r) => b.includes(r));
-    return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb);
-  });
-  return files[0] ? path.join(dir, files[0]) : null;
+  return (
+    preferredModel() ?? bestModelIn(path.join(/*turbopackIgnore: true*/ root(), 'models')) ?? bestModelIn(path.join(config.whisperDir, 'models'))
+  );
 }
 
 export type TranscriberKind = 'openai' | 'whispercpp' | 'none';
 
+/**
+ * Local transcription (whisper.cpp) is the default: it is free and needs no
+ * API key. OpenAI is only used when TRANSCRIBER=openai or when there is a key
+ * and no local engine installed.
+ */
 export function selectTranscriber(): { kind: TranscriberKind; detail: string } {
   const pref = config.transcriber;
   const hasOpenai = !!config.openaiKey;
   const bin = whisperCppBinary();
   const model = whisperCppModel();
-  const hasLocal = !!bin && !!model;
-  if ((pref === 'openai' || !pref) && hasOpenai) return { kind: 'openai', detail: `${config.openaiModel} · ${new URL(config.openaiBaseUrl).host}` };
-  if ((pref === 'whispercpp' || !pref) && hasLocal) return { kind: 'whispercpp', detail: `${path.basename(bin!)} · ${path.basename(model!)}` };
-  if (pref === 'openai') return { kind: 'none', detail: 'TRANSCRIBER=openai pero falta OPENAI_API_KEY' };
-  if (pref === 'whispercpp')
-    return { kind: 'none', detail: !bin ? 'No se encuentra el binario de whisper.cpp' : 'No se encuentra el modelo ggml de whisper.cpp' };
-  return { kind: 'none', detail: 'Configura OPENAI_API_KEY o whisper.cpp (ver README)' };
+  const openai = { kind: 'openai' as const, detail: `${config.openaiModel} · ${new URL(config.openaiBaseUrl).host}` };
+  if (pref === 'openai') return hasOpenai ? openai : { kind: 'none', detail: 'TRANSCRIBER=openai pero falta OPENAI_API_KEY' };
+  if (bin && model) return { kind: 'whispercpp', detail: `${path.basename(bin)} · ${path.basename(model)}` };
+  if (pref !== 'whispercpp' && hasOpenai) return openai;
+  if (bin && !model) return { kind: 'none', detail: 'Falta descargar el modelo de transcripción local' };
+  return { kind: 'none', detail: 'Instala la transcripción local (gratis, sin API) desde la pantalla de inicio' };
 }

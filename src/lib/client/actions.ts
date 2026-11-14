@@ -11,6 +11,8 @@ import { FRAME, quantize } from '@/lib/shared/ranges';
 import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTimeline, timelineToSource, wordsInClip } from '@/lib/shared/timeline';
 import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimRange, wordRunRanges } from '@/lib/shared/edit';
 import { computeFillerCuts, computeRetakeCuts, computeSilenceCuts } from '@/lib/shared/cleanup';
+import { alignScript } from '@/lib/shared/script';
+import { buildSrt, buildVtt, captionPages, transcriptText } from '@/lib/shared/text-export';
 import { api, uploadFile } from './api';
 import { currentDerived } from './derived';
 import { formatSeconds, formatTime } from './format';
@@ -250,8 +252,17 @@ export function updateItem(kind: 'broll' | 'audio', id: string, patch: Partial<B
 const withMedia = (doc: ProjectDoc, id: string): string[] => (doc.media.includes(id) ? doc.media : [...doc.media, id]);
 
 export function addClipInstance(media: MediaInfo) {
-  const clip: MainClip = { id: newId(), mediaId: media.id, start: 0, end: media.duration, cuts: [] };
-  ed().commitDoc((d) => ({ ...d, media: withMedia(d, media.id), clips: [...d.clips, clip] }));
+  ed().commitDoc((d) => {
+    const clip: MainClip = {
+      id: newId(),
+      mediaId: media.id,
+      start: 0,
+      end: media.duration,
+      cuts: [],
+      autoClean: d.settings.autoSilence || undefined,
+    };
+    return { ...d, media: withMedia(d, media.id), clips: [...d.clips, clip] };
+  });
 }
 
 export function addBroll(media: MediaInfo, start: number, length?: number) {
@@ -299,6 +310,78 @@ export function removeMediaFromProject(mediaId: string) {
 export function stepFrames(frames: number) {
   player.pause();
   player.seek(usePlayback.getState().time + frames * FRAME);
+}
+
+// ------------------------------------------------------- script and text
+
+export const saveScript = (script: string) => ed().commit((d) => void (d.script = script), 'script');
+
+/**
+ * Replaces the recognised wording with the script's (same timing). Only the
+ * words that remain in the edited video are aligned, so clean up first.
+ */
+export function applyScript(script: string) {
+  const s = ed();
+  const { clipWords } = currentDerived();
+  const views = clipWords.flatMap((cw) => cw.views.filter((v) => !v.deleted));
+  if (!views.length) return s.toast('Primero hace falta la transcripción del vídeo para sincronizar el guión', 'error');
+  let res;
+  try {
+    res = alignScript(
+      views.map((v) => v.word.text),
+      script,
+    );
+  } catch (e) {
+    return s.toast(errorText(e), 'error');
+  }
+  s.commit((d) => {
+    d.script = script;
+    views.forEach((v, i) => {
+      const text = res.texts.get(i);
+      const prev = d.words[v.key] ?? {};
+      const next = { ...prev, text: text && text !== v.word.text ? text : undefined };
+      if (next.text === undefined) delete next.text;
+      if (Object.keys(next).length) d.words[v.key] = next;
+      else delete d.words[v.key];
+    });
+  });
+  const extra = res.extraSpoken ? ` · ${res.extraSpoken} palabras dichas que no están en el guión (se mantienen)` : '';
+  s.toast(`Guión aplicado: ${res.matched} palabras coinciden, ${res.changed} corregidas${extra}`, 'success');
+}
+
+function saveFile(name: string, content: string, type = 'text/plain') {
+  const blob = new Blob([content], { type: `${type};charset=utf-8` });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+export type TextFormat = 'txt' | 'srt' | 'vtt' | 'script';
+
+export function downloadText(format: TextFormat) {
+  const doc = ed().doc;
+  if (!doc) return;
+  const { clipWords } = currentDerived();
+  const base = (doc.name || 'transcripcion').replace(/[\\/:*?"<>|]+/g, '-');
+  if (format === 'script') return saveFile(`${base} - guion.txt`, doc.script);
+  const text = transcriptText(clipWords);
+  if (!text) return ed().toast('Todavía no hay texto: espera a que termine la transcripción', 'error');
+  if (format === 'txt') saveFile(`${base}.txt`, text);
+  else if (format === 'srt') saveFile(`${base}.srt`, buildSrt(captionPages(clipWords)), 'application/x-subrip');
+  else saveFile(`${base}.vtt`, buildVtt(captionPages(clipWords)), 'text/vtt');
+}
+
+export async function copyText() {
+  const text = transcriptText(currentDerived().clipWords);
+  if (!text) return ed().toast('Todavía no hay texto para copiar', 'error');
+  try {
+    await navigator.clipboard.writeText(text);
+    ed().toast('Texto copiado al portapapeles', 'success');
+  } catch {
+    ed().toast('El navegador no permitió copiar: usa Descargar TXT', 'error');
+  }
 }
 
 // ------------------------------------------------------------ auto-clean

@@ -91,6 +91,8 @@ export interface MainClip {
   start: number;
   end: number;
   cuts: Cut[];
+  /** Silences are removed automatically once its audio and transcript are ready. */
+  autoClean?: boolean;
 }
 
 /** B-roll overlay placed on the timeline. */
@@ -155,6 +157,8 @@ export interface ProjectSettings {
   silencePadding: number;
   fillers: string[];
   mainVolume: number;
+  /** Remove silences automatically from newly added clips. */
+  autoSilence: boolean;
 }
 
 export interface ProjectDoc {
@@ -172,6 +176,8 @@ export interface ProjectDoc {
   subtitles: SubtitleStyle;
   /** Keyed by `${mediaId}:${wordId}`. */
   words: Record<string, WordOverride>;
+  /** Written script pasted by the user (used to correct the subtitles). */
+  script: string;
 }
 
 export interface ProjectSummary {
@@ -182,7 +188,7 @@ export interface ProjectSummary {
   clipCount: number;
 }
 
-export type JobType = 'ingest' | 'transcribe' | 'export';
+export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
 export interface JobInfo {
@@ -197,12 +203,27 @@ export interface JobInfo {
   createdAt: string;
 }
 
+/** Local (offline) transcription with whisper.cpp. */
+export interface LocalTranscriberStatus {
+  /** Path of the whisper.cpp executable, if found. */
+  binary: string | null;
+  /** File name of the ggml model in use, if any. */
+  model: string | null;
+  /** The app can download the engine for this system (Windows, Linux) or it is already installed. */
+  canInstall: boolean;
+  platform: string;
+  /** Running installation job, if any. */
+  setupJobId: string | null;
+}
+
 export interface ServerStatus {
   transcriber: 'openai' | 'whispercpp' | 'none';
   transcriberDetail: string;
   ffmpeg: string | null;
+  ffprobe: boolean;
   resourcesDir: string;
   defaultLanguage: string;
+  local: LocalTranscriberStatus;
 }
 
 export const DEFAULT_FILLERS = ['eh', 'ehm', 'em', 'mm', 'hmm', 'uh', 'um', 'o sea'];
@@ -231,6 +252,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   silencePadding: 0.1,
   fillers: DEFAULT_FILLERS,
   mainVolume: 1,
+  autoSilence: true,
 };
 
 export function createProjectDoc(id: string, name: string, language = 'es'): ProjectDoc {
@@ -248,6 +270,7 @@ export function createProjectDoc(id: string, name: string, language = 'es'): Pro
     audio: [],
     subtitles: { ...DEFAULT_SUBTITLE_STYLE },
     words: {},
+    script: '',
   };
 }
 
@@ -263,6 +286,7 @@ export function normalizeProjectDoc(raw: ProjectDoc): ProjectDoc {
     audio: raw.audio ?? [],
     subtitles: { ...DEFAULT_SUBTITLE_STYLE, ...(raw.subtitles ?? {}) },
     words: raw.words ?? {},
+    script: raw.script ?? '',
   };
 }
 

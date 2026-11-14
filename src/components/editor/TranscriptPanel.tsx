@@ -1,7 +1,22 @@
 'use client';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { AlertTriangle, Captions, EyeOff, Pilcrow, Play, RefreshCw, RotateCcw, Scissors, Settings2, Sparkles, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Captions,
+  Copy,
+  Download,
+  EyeOff,
+  FileText,
+  Pilcrow,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Scissors,
+  Settings2,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import type { CutReason, Range } from '@/lib/shared/types';
 import { keptRanges, type ClipWords, type WordView } from '@/lib/shared/timeline';
 import { overlap, totalLength } from '@/lib/shared/ranges';
@@ -10,6 +25,10 @@ import { useClipWords } from '@/lib/client/derived';
 import { usePlayback } from '@/lib/client/player';
 import { formatSeconds, formatTime } from '@/lib/client/format';
 import {
+  applyScript,
+  copyText,
+  downloadText,
+  saveScript,
   clearCuts,
   cutSelectedWords,
   playSelectedWords,
@@ -22,7 +41,7 @@ import {
   toggleHiddenSelected,
   togglePause,
 } from '@/lib/client/actions';
-import { Button, Field, IconButton, ProgressBar } from '@/components/ui';
+import { Button, Field, IconButton, Modal, ProgressBar, Toggle } from '@/components/ui';
 
 const REASON_CLASS: Record<CutReason, string> = {
   manual: 'decoration-danger',
@@ -86,6 +105,11 @@ function CleanupBar() {
       </Button>
       {open && (
         <div className="mt-3 flex flex-col gap-3 rounded-lg border border-line bg-panel-2 p-3">
+          <Toggle
+            label="Quitar silencios automáticamente al añadir clips"
+            checked={settings.autoSilence}
+            onChange={(v) => set((s) => void (s.autoSilence = v), 'autoSilence')}
+          />
           <Field label="Silencio mínimo a quitar" hint={formatSeconds(settings.silenceMin, 2)}>
             <input
               type="range"
@@ -138,6 +162,112 @@ function CleanupBar() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ScriptDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const saved = useEditor((s) => s.doc?.script ?? '');
+  const [text, setText] = useState(saved);
+  useEffect(() => {
+    if (open) setText(saved);
+    // Only when the dialog opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  return (
+    <Modal open={open} onClose={onClose} title="Tu guión" width="max-w-2xl">
+      <div className="flex flex-col gap-3 text-sm">
+        <p className="text-xs leading-relaxed text-muted">
+          Pega el texto que has escrito para el vídeo. Se sincroniza con tu voz: los subtítulos usarán exactamente tus palabras, ortografía y
+          puntuación, con los tiempos de lo que dices. Lo que digas y no esté en el guión se mantiene tal cual. Hazlo después de limpiar el vídeo.
+        </p>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={12}
+          placeholder="Hoy el día está nublado y quiero que mañana haga sol…"
+          className="w-full resize-y rounded-md border border-line-strong bg-panel-2 p-3 text-sm leading-relaxed focus:border-accent focus:outline-none"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="cursor-pointer text-xs text-muted hover:text-fg">
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) setText(await f.text());
+              }}
+            />
+            Abrir un archivo .txt
+          </label>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                saveScript(text);
+                onClose();
+              }}
+            >
+              Solo guardar
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!text.trim()}
+              onClick={() => {
+                applyScript(text);
+                onClose();
+              }}
+            >
+              Aplicar a los subtítulos
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function TextBar() {
+  const [scriptOpen, setScriptOpen] = useState(false);
+  const hasScript = useEditor((s) => !!s.doc?.script.trim());
+  return (
+    <div className="flex items-center gap-1 border-b border-line px-3 py-2">
+      <span className="mr-auto text-xs font-semibold">Texto</span>
+      <Button size="sm" variant="ghost" className="px-2" onClick={() => setScriptOpen(true)} title="Pegar o editar tu guión">
+        <FileText size={13} /> Guión
+      </Button>
+      <Button size="sm" variant="ghost" className="px-2" onClick={copyText} title="Copiar el texto del vídeo">
+        <Copy size={13} /> Copiar
+      </Button>
+      <Button size="sm" variant="ghost" className="px-2" onClick={() => downloadText('txt')} title="Descargar el texto (.txt)">
+        <Download size={13} /> TXT
+      </Button>
+      <Button size="sm" variant="ghost" className="px-2" onClick={() => downloadText('srt')} title="Descargar subtítulos con tiempos (.srt)">
+        <Download size={13} /> SRT
+      </Button>
+      {hasScript && (
+        <IconButton label="Descargar el guión (.txt)" className="h-7 w-7" onClick={() => downloadText('script')}>
+          <FileText size={13} />
+        </IconButton>
+      )}
+      <ScriptDialog open={scriptOpen} onClose={() => setScriptOpen(false)} />
+    </div>
+  );
+}
+
+function NoTranscriberBanner() {
+  const missing = useEditor((s) => s.status?.transcriber === 'none');
+  if (!missing) return null;
+  return (
+    <div className="flex items-center gap-3 border-b border-accent/30 bg-accent/5 px-3 py-2.5 text-xs">
+      <Captions size={16} className="shrink-0 text-accent" />
+      <span className="flex-1 text-muted">
+        Para crear los subtítulos falta instalar la transcripción local (gratis, sin API). Los silencios ya se pueden quitar.
+      </span>
+      <Button size="sm" variant="primary" onClick={() => useEditor.getState().set({ setupOpen: true })}>
+        Instalar
+      </Button>
     </div>
   );
 }
@@ -202,6 +332,9 @@ function ClipHeader({ cw, n }: { cw: ClipWords; n: number }) {
           </span>
           <ProgressBar value={t.progress} indeterminate={t.status === 'queued' || t.progress <= 0.02} />
         </div>
+      )}
+      {cw.clip.autoClean && (t?.status === 'queued' || t?.status === 'running' || media?.status === 'processing') && (
+        <p className="text-[11px] text-faint">Los silencios se quitarán solos en cuanto termine el análisis.</p>
       )}
       {t?.status === 'error' && (
         <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 p-2 text-xs text-danger">
@@ -359,7 +492,9 @@ export function TranscriptPanel() {
 
   return (
     <div className="flex h-full flex-col">
+      <NoTranscriberBanner />
       <CleanupBar />
+      <TextBar />
       <div className="relative min-h-0 flex-1">
         <div
           ref={ref}

@@ -18,17 +18,22 @@ function SaveState() {
 function TranscriberBadge() {
   const status = useEditor((s) => s.status);
   if (!status) return null;
-  const label = status.transcriber === 'openai' ? 'Whisper API' : status.transcriber === 'whispercpp' ? 'whisper.cpp' : 'Sin transcriptor';
+  const label =
+    status.transcriber === 'openai' ? 'Whisper API' : status.transcriber === 'whispercpp' ? 'Transcripción local' : 'Instalar transcripción';
   return (
-    <span
-      title={status.transcriberDetail}
+    <button
+      title={`${status.transcriberDetail} · clic para configurar`}
+      onClick={() => useEditor.getState().set({ setupOpen: true })}
+      onMouseUp={(e) => e.currentTarget.blur()}
       className={clsx(
-        'hidden rounded-full border px-2 py-0.5 text-[11px] font-medium lg:inline',
-        status.transcriber === 'none' ? 'border-danger/40 text-danger' : 'border-line-strong text-muted',
+        'hidden rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors lg:inline',
+        status.transcriber === 'none'
+          ? 'border-accent/60 bg-accent/10 text-accent hover:bg-accent/20'
+          : 'border-line-strong text-muted hover:text-fg',
       )}
     >
       {label}
-    </span>
+    </button>
   );
 }
 

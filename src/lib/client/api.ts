@@ -37,6 +37,7 @@ export const api = {
   exports: () => request<{ exports: { name: string; url: string; size: number; createdAt: string }[] }>('/api/export').then((r) => r.exports),
   job: (id: string) => request<{ job: JobInfo }>(`/api/jobs/${id}`).then((r) => r.job),
   cancelJob: (id: string) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
+  installWhisper: (model: string) => request<{ job: JobInfo }>('/api/whisper/setup', jsonBody({ model })).then((r) => r.job),
 };
 
 export const mediaUrl = {

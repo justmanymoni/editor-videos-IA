@@ -5,7 +5,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { config, whisperCppBinary, whisperCppModel } from '../config';
-import { ffmpeg, runChecked } from '../ffmpeg';
+import { ffmpeg, run } from '../ffmpeg';
 import type { JobContext } from '../jobs';
 import type { RawWord } from './align';
 
@@ -63,13 +63,28 @@ export async function transcribeWhisperCpp(source: string, language: string, ctx
     '-pp',
   ];
   if (config.transcriptionPrompt) args.push('--prompt', config.transcriptionPrompt);
-  await runChecked(bin, args, {
+  const res = await run(bin, args, {
     signal: ctx.signal,
     onStderrLine: (line) => {
       const m = /progress\s*=\s*(\d+)%/.exec(line);
-      if (m) ctx.progress(0.05 + (Number(m[1]) / 100) * 0.93);
+      if (m) ctx.progress(0.05 + (Math.min(100, Number(m[1])) / 100) * 0.93);
     },
   });
+  if (res.code !== 0) {
+    const detail = res.stderr.trim().split(/\r?\n/).slice(-3).join('\n');
+    throw new Error(`${engineFailureMessage(res.code)}${detail ? `\n${detail}` : ''}`);
+  }
   const data = JSON.parse(await readFile(`${outBase}.json`, 'utf8')) as WhisperCppJson;
   return parseWhisperCppJson(data);
+}
+
+/** Explains the usual reasons why whisper-cli cannot run. */
+export function engineFailureMessage(code: number): string {
+  // 0xC0000135 / 0xC000007B: missing or wrong DLL (Visual C++ runtime) on Windows.
+  if ([3221225781, -1073741515, 3221225595, -1073741701].includes(code)) {
+    return 'whisper.cpp no puede arrancar porque falta el «Microsoft Visual C++ Redistributable». Instálalo desde https://aka.ms/vs/17/release/vc_redist.x64.exe y vuelve a intentarlo.';
+  }
+  // 0xC000001D: illegal instruction (very old CPU).
+  if ([3221225501, -1073741795].includes(code)) return 'Tu procesador no es compatible con esta versión de whisper.cpp.';
+  return `whisper.cpp terminó con código ${code}.`;
 }

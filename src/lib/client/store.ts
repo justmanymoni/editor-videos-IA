@@ -47,6 +47,8 @@ interface EditorState {
   uploads: Upload[];
   toasts: Toast[];
   status: ServerStatus | null;
+  /** Local transcription installer dialog. */
+  setupOpen: boolean;
 
   load(doc: ProjectDoc): void;
   /** Applies a pure update to the document as one undo step. */
@@ -83,6 +85,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   uploads: [],
   toasts: [],
   status: null,
+  setupOpen: false,
 
   load: (doc) => set({ doc, past: [], future: [], lastCommit: null, selection: null, saveState: 'saved' }),
 

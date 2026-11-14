@@ -4,6 +4,10 @@ import { api } from './api';
 import { useEditor } from './store';
 import { player, usePlayback } from './player';
 import { deleteSelection, splitAtPlayhead, stepFrames } from './actions';
+import { computeSilenceCuts } from '@/lib/shared/cleanup';
+import { replaceCuts } from '@/lib/shared/edit';
+import { buildSegments, sequenceDuration, wordsInClip } from '@/lib/shared/timeline';
+import { formatSeconds } from './format';
 
 /**
  * Polls media that is still processing or transcribing, and loads
@@ -63,6 +67,61 @@ export function useMediaSync() {
       stopped = true;
       clearTimeout(timer);
     };
+  }, []);
+}
+
+/**
+ * Removes the silences of newly added clips as soon as their audio analysis
+ * and transcript are ready (or transcription is not available). Runs once per
+ * clip; the result can be undone like any other edit.
+ */
+export function useAutoSilence() {
+  useEffect(() => {
+    const handled = new Set<string>();
+    const check = () => {
+      const s = useEditor.getState();
+      if (!s.doc) return;
+      const ready = s.doc.clips.filter((c) => {
+        if (!c.autoClean || handled.has(c.id)) return false;
+        const m = s.media[c.mediaId];
+        if (!m) return false;
+        if (!m.hasAudio || m.status === 'error') return true;
+        const t = m.transcript.status;
+        if (t === 'queued' || t === 'running') return false;
+        if (t === 'done' && !s.transcripts[m.id]) return false;
+        if (!m.hasEnvelope) return m.status !== 'processing';
+        return !!s.envelopes[m.id];
+      });
+      if (!ready.length) return;
+      for (const c of ready) handled.add(c.id);
+      const ids = new Set(ready.map((c) => c.id));
+      queueMicrotask(() => {
+        const st = useEditor.getState();
+        if (!st.doc) return;
+        const before = sequenceDuration(buildSegments(st.doc.clips));
+        st.commitDoc((d) => ({
+          ...d,
+          clips: d.clips.map((c) => {
+            if (!ids.has(c.id)) return c;
+            const { autoClean: _done, ...clip } = c;
+            if (!d.settings.autoSilence) return clip;
+            const cuts = computeSilenceCuts(
+              clip,
+              wordsInClip(st.transcripts[c.mediaId], clip),
+              st.envelopes[c.mediaId],
+              d.settings.silenceMin,
+              d.settings.silencePadding,
+            );
+            return replaceCuts(clip, 'silence', cuts);
+          }),
+        }));
+        const after = useEditor.getState().doc;
+        const saved = after ? before - sequenceDuration(buildSegments(after.clips)) : 0;
+        if (saved > 0.05) st.toast(`Silencios quitados automáticamente: −${formatSeconds(saved)}`, 'success');
+      });
+    };
+    check();
+    return useEditor.subscribe(check);
   }, []);
 }
 

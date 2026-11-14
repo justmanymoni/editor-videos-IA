@@ -26,6 +26,8 @@ const limits = (): Record<JobType, number> => ({
   transcribe: Number(process.env.TRANSCRIBE_CONCURRENCY) || 1,
   export: 1,
   setup: 1,
+  separate: 1,
+  mix: 2,
 });
 
 const KEEP_FINISHED_MS = 60 * 60 * 1000;
@@ -33,7 +35,7 @@ const KEEP_FINISHED_MS = 60 * 60 * 1000;
 class JobQueue {
   private entries = new Map<string, Entry>();
   private pending: Entry[] = [];
-  private running: Record<JobType, number> = { ingest: 0, transcribe: 0, export: 0, setup: 0 };
+  private running: Record<JobType, number> = { ingest: 0, transcribe: 0, export: 0, setup: 0, separate: 0, mix: 0 };
 
   enqueue(type: JobType, refId: string, run: Runner): JobInfo {
     this.gc();

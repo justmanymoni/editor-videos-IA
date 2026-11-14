@@ -5,11 +5,7 @@
  */
 import path from 'node:path';
 import os from 'node:os';
-import { createWriteStream } from 'node:fs';
-import { chmod, mkdir, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { Readable, Transform } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import { chmod, mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { WHISPER_MODELS } from '../shared/whisper-models';
 import { config, whisperCppBinary } from './config';
 import { run, runChecked } from './ffmpeg';
@@ -17,6 +13,7 @@ import { jobs, type JobContext } from './jobs';
 import { enqueueTranscribe } from './ingest';
 import { getMedia } from './media-store';
 import { extractZip } from './unzip';
+import { HttpError, download } from './download';
 import { engineFailureMessage } from './transcribe/whispercpp';
 
 /** Releases known to publish prebuilt binaries (newest first). */
@@ -32,49 +29,6 @@ export function releaseAsset(): string | null {
   if (process.platform === 'linux' && os.arch() === 'x64') return 'whisper-bin-ubuntu-x64.tar.gz';
   if (process.platform === 'linux' && os.arch() === 'arm64') return 'whisper-bin-ubuntu-arm64.tar.gz';
   return null;
-}
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    url: string,
-  ) {
-    super(`La descarga falló (HTTP ${status}): ${url}`);
-  }
-}
-
-/** Streams a URL to disk, reporting bytes received. Writes to .part and renames at the end. */
-export async function download(url: string, dest: string, onProgress: (received: number, total: number) => void, signal?: AbortSignal) {
-  let res: Response;
-  try {
-    res = await fetch(url, { redirect: 'follow', signal });
-  } catch (err) {
-    if (signal?.aborted) throw new Error('Cancelado');
-    throw new Error(`No se pudo conectar para descargar ${url}. ¿Hay conexión a internet? (${err instanceof Error ? err.message : err})`);
-  }
-  if (!res.ok || !res.body) throw new HttpError(res.status, url);
-  const total = Number(res.headers.get('content-length')) || 0;
-  let received = 0;
-  const counter = new Transform({
-    transform(chunk: Buffer, _enc, cb) {
-      received += chunk.length;
-      onProgress(received, total);
-      cb(null, chunk);
-    },
-  });
-  await mkdir(path.dirname(dest), { recursive: true });
-  const part = `${dest}.part`;
-  try {
-    await pipeline(Readable.fromWeb(res.body as NodeReadableStream), counter, createWriteStream(part), { signal });
-  } catch (err) {
-    await rm(part, { force: true });
-    throw signal?.aborted ? new Error('Cancelado') : err;
-  }
-  if (total && received !== total) {
-    await rm(part, { force: true });
-    throw new Error('La descarga se cortó antes de terminar. Vuelve a intentarlo.');
-  }
-  await rename(part, dest);
 }
 
 /** Downloads and unpacks whisper.cpp unless an engine is already available. */

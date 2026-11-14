@@ -27,8 +27,8 @@ export const api = {
   transcript: (id: string) => request<{ transcript: Transcript }>(`/api/media/${id}/transcript`).then((r) => r.transcript),
   retranscribe: (id: string, language: string) =>
     request<{ media: MediaInfo }>(`/api/media/${id}/transcript`, jsonBody({ language })).then((r) => r.media),
-  envelope: async (id: string): Promise<Envelope> => {
-    const res = await fetch(`/api/media/${id}/envelope`);
+  envelope: async (id: string, stem?: 'voice'): Promise<Envelope> => {
+    const res = await fetch(`/api/media/${id}/envelope${stem ? `?stem=${stem}` : ''}`);
     if (!res.ok) throw new Error('Sin análisis de audio');
     return { rate: 100, values: new Uint8Array(await res.arrayBuffer()) };
   },
@@ -37,6 +37,8 @@ export const api = {
   exports: () => request<{ exports: { name: string; url: string; size: number; createdAt: string }[] }>('/api/export').then((r) => r.exports),
   job: (id: string) => request<{ job: JobInfo }>(`/api/jobs/${id}`).then((r) => r.job),
   cancelJob: (id: string) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
+  separate: (id: string) => request<{ media: MediaInfo }>(`/api/media/${id}/separate`, jsonBody({})).then((r) => r.media),
+  mix: (id: string, voice: number, music: number) => request<{ url?: string; jobId?: string }>(`/api/media/${id}/mix`, jsonBody({ voice, music })),
   installWhisper: (model: string) => request<{ job: JobInfo }>('/api/whisper/setup', jsonBody({ model })).then((r) => r.job),
 };
 

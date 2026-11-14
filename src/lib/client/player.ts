@@ -40,11 +40,13 @@ class PlayerEngine {
     if (prev) {
       prev.removeEventListener('seeked', this.onSeeked);
       prev.removeEventListener('loadeddata', this.onSeeked);
+      prev.removeEventListener('loadedmetadata', this.onReloaded);
     }
     if (el) {
       this.decks.set(key, el);
       el.addEventListener('seeked', this.onSeeked);
       el.addEventListener('loadeddata', this.onSeeked);
+      el.addEventListener('loadedmetadata', this.onReloaded);
       // A deck that appears late (new clip) may be the one we should show.
       if (this.cur >= 0 && this.deckFor(this.cur) === el) queueMicrotask(() => this.seek(usePlayback.getState().time));
     } else this.decks.delete(key);
@@ -226,6 +228,11 @@ class PlayerEngine {
       }
     }
   }
+
+  /** A deck whose source changed (e.g. new audio mix) starts at 0: put it back where the timeline is. */
+  private onReloaded = (e: Event) => {
+    if (e.target === this.deckFor(this.cur) || e.target === this.deckFor(this.cur + 1)) this.seek(usePlayback.getState().time);
+  };
 
   private onSeeked = (e: Event) => {
     if (e.target === this.deckFor(this.cur)) this.drawBlur();

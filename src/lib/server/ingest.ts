@@ -9,6 +9,7 @@ import { errorMessage, jobs } from './jobs';
 import { extOf, getMedia, mediaPaths, updateMedia, writeTranscript, type MediaRecord } from './media-store';
 import { transcribeMedia } from './transcribe';
 import { ENVELOPE_RATE, computeEnvelope } from './envelope';
+import { enqueueSeparation } from './separation';
 
 const PROXY_LONG_SIDE = 1280;
 
@@ -154,6 +155,9 @@ export async function resumeInterrupted(rec: MediaRecord) {
   if (rec.status === 'processing' && !jobs.active('ingest', rec.id)) enqueueIngest(rec.id);
   if ((rec.transcript.status === 'queued' || rec.transcript.status === 'running') && !jobs.active('transcribe', rec.id)) {
     await enqueueTranscribe(rec.id, rec.transcript.language || config.defaultLanguage);
+  }
+  if ((rec.separation.status === 'queued' || rec.separation.status === 'running') && !jobs.active('separate', rec.id)) {
+    await enqueueSeparation(rec.id);
   }
 }
 

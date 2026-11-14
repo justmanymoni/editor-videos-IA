@@ -17,6 +17,8 @@ export function useMediaSync() {
   useEffect(() => {
     const inflight = new Set<string>();
     const missing = new Set<string>();
+    const envelopeFrom = new Set<string>();
+    const separationSeen = new Map<string, string>();
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -26,7 +28,15 @@ export function useMediaSync() {
         const ids = [...new Set([...s.doc.media, ...s.resourceIds])].filter((id) => !missing.has(id));
         const pending = ids.filter((id) => {
           const m = s.media[id];
-          return !m || m.status === 'processing' || m.transcript.status === 'queued' || m.transcript.status === 'running';
+          const sep = m?.separation?.status;
+          return (
+            !m ||
+            m.status === 'processing' ||
+            m.transcript.status === 'queued' ||
+            m.transcript.status === 'running' ||
+            sep === 'queued' ||
+            sep === 'running'
+          );
         });
         if (pending.length) {
           try {
@@ -50,14 +60,28 @@ export function useMediaSync() {
               .catch(() => undefined)
               .finally(() => inflight.delete(`t:${id}`));
           }
-          if (m.hasEnvelope && !now.envelopes[id] && !inflight.has(`e:${id}`)) {
-            inflight.add(`e:${id}`);
+          // Once voice and music are separated, silences are detected on the clean voice.
+          const voiceStem = m.separation?.status === 'done';
+          const envKey = `${voiceStem ? 'v' : 'e'}:${id}`;
+          if (m.hasEnvelope && !envelopeFrom.has(envKey) && !inflight.has(envKey)) {
+            inflight.add(envKey);
             api
-              .envelope(id)
-              .then((env) => useEditor.getState().setEnvelope(id, env))
+              .envelope(id, voiceStem ? 'voice' : undefined)
+              .then((env) => {
+                envelopeFrom.add(envKey);
+                useEditor.getState().setEnvelope(id, env);
+              })
               .catch(() => undefined)
-              .finally(() => inflight.delete(`e:${id}`));
+              .finally(() => inflight.delete(envKey));
           }
+          const before = separationSeen.get(id);
+          const after = m.separation?.status;
+          if (before && before !== after && (before === 'running' || before === 'queued')) {
+            if (after === 'done') {
+              now.toast(`Voz y música separadas en «${m.name}». Elige en su tarjeta qué quieres escuchar.`, 'success');
+            } else if (after === 'error') now.toast(`No se pudo separar «${m.name}»: ${m.separation.error ?? ''}`, 'error');
+          }
+          if (after) separationSeen.set(id, after);
         }
       }
       if (!stopped) timer = setTimeout(tick, 1000);
@@ -122,6 +146,60 @@ export function useAutoSilence() {
     };
     check();
     return useEditor.subscribe(check);
+  }, []);
+}
+
+/**
+ * Keeps a preview video for every clip whose voice/music mix was changed, so
+ * the player sounds exactly like the export (rendered on the server).
+ */
+export function useMixPreviews() {
+  useEffect(() => {
+    const requested = new Map<string, string>();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const sync = async () => {
+      const s = useEditor.getState();
+      const mixes = s.doc?.audioMix ?? {};
+      for (const id of Object.keys(s.mixUrls)) {
+        if (!mixes[id]) {
+          const { [id]: _gone, ...rest } = useEditor.getState().mixUrls;
+          useEditor.getState().set({ mixUrls: rest });
+          requested.delete(id);
+        }
+      }
+      for (const [id, mix] of Object.entries(mixes)) {
+        if (s.media[id]?.separation?.status !== 'done') continue;
+        const key = `${mix.voice}:${mix.music}`;
+        if (requested.get(id) === key) continue;
+        requested.set(id, key);
+        try {
+          let res = await api.mix(id, mix.voice, mix.music);
+          while (res.jobId) {
+            await new Promise((r) => setTimeout(r, 700));
+            const job = await api.job(res.jobId);
+            if (job.status === 'error') throw new Error(job.error ?? 'Error al preparar la mezcla');
+            if (job.status === 'done') res = await api.mix(id, mix.voice, mix.music);
+          }
+          if (res.url && requested.get(id) === key) useEditor.getState().set({ mixUrls: { ...useEditor.getState().mixUrls, [id]: res.url } });
+        } catch (e) {
+          requested.delete(id);
+          useEditor.getState().toast(e instanceof Error ? e.message : String(e), 'error');
+        }
+      }
+    };
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void sync(), 400);
+    };
+    schedule();
+    const unsub = useEditor.subscribe((s, prev) => {
+      if (s.doc?.audioMix !== prev.doc?.audioMix || s.media !== prev.media) schedule();
+    });
+    return () => {
+      unsub();
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 }
 

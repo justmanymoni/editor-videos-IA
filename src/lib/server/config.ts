@@ -114,7 +114,7 @@ function preferredModel(): string | null {
   try {
     const { model } = JSON.parse(readFileSync(path.join(config.whisperDir, 'config.json'), 'utf8')) as { model?: string };
     const file = model && path.join(config.whisperDir, 'models', `ggml-${model}.bin`);
-    return file && existsSync(file) ? file : null;
+    return file && existsSync(/*turbopackIgnore: true*/ file) ? file : null;
   } catch {
     return null;
   }

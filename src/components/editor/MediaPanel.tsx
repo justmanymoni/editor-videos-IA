@@ -1,7 +1,21 @@
 'use client';
 import { useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { AlertTriangle, Film, Image as ImageIcon, Music, Pause, Play, Plus, RefreshCw, Sparkles, Trash2, Upload } from 'lucide-react';
+import {
+  AlertTriangle,
+  AudioLines,
+  Film,
+  Image as ImageIcon,
+  Loader2,
+  Music,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import type { MediaInfo } from '@/lib/shared/types';
 import { suggestBroll } from '@/lib/shared/suggest';
 import { mediaUrl } from '@/lib/client/api';
@@ -19,7 +33,8 @@ import {
   uploadClips,
   uploadResources,
 } from '@/lib/client/actions';
-import { Button, IconButton, ProgressBar } from '@/components/ui';
+import { Button, IconButton, ProgressBar, Segmented } from '@/components/ui';
+import { api } from '@/lib/client/api';
 
 export const MEDIA_DRAG_TYPE = 'application/x-verticut-media';
 
@@ -168,6 +183,90 @@ function TranscriptStatus({ media }: { media: MediaInfo }) {
   return null;
 }
 
+function setMix(mediaId: string, voice: number, music: number, coalesce?: string) {
+  useEditor.getState().commit((d) => {
+    if (voice === 1 && music === 1) delete d.audioMix[mediaId];
+    else d.audioMix[mediaId] = { voice, music };
+  }, coalesce);
+}
+
+/** Separate the clip's voice from its background music and choose what to keep. */
+function AudioControls({ media }: { media: MediaInfo }) {
+  const mix = useEditor((s) => s.doc?.audioMix[media.id]);
+  const mixUrl = useEditor((s) => s.mixUrls[media.id]);
+  const sep = media.separation ?? { status: 'none', progress: 0, message: null, error: null };
+  const start = async () => {
+    try {
+      useEditor.getState().upsertMedia([await api.separate(media.id)]);
+    } catch (e) {
+      useEditor.getState().toast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  };
+
+  if (sep.status === 'none' || sep.status === 'error') {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="self-start px-1.5"
+          onClick={start}
+          title="Separa la voz de la música de fondo para quitar una de las dos"
+        >
+          <AudioLines size={12} /> Separar voz y música
+        </Button>
+        {sep.status === 'error' && <p className="line-clamp-3 text-[11px] whitespace-pre-line text-danger">{sep.error}</p>}
+      </div>
+    );
+  }
+  if (sep.status === 'queued' || sep.status === 'running') {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] text-muted">
+          {sep.message ?? 'Separando voz y música…'} {sep.status === 'running' && `${Math.round(sep.progress * 100)}%`}
+        </span>
+        <ProgressBar value={sep.progress} indeterminate={sep.status === 'queued' || sep.progress <= 0} />
+      </div>
+    );
+  }
+  const voice = mix?.voice ?? 1;
+  const music = mix?.music ?? 1;
+  const preset = !mix ? 'original' : voice > 0 && music === 0 ? 'voice' : voice === 0 && music > 0 ? 'music' : 'custom';
+  const preparing = !!mix && !mixUrl?.endsWith(`v=${voice}&m=${music}`);
+  return (
+    <div className="mt-1 flex flex-col gap-1.5 rounded-md border border-line bg-panel p-2">
+      <Segmented
+        value={preset}
+        onChange={(v) =>
+          v === 'original' ? setMix(media.id, 1, 1) : v === 'voice' ? setMix(media.id, 1, 0) : v === 'music' ? setMix(media.id, 0, 1) : undefined
+        }
+        options={[
+          { value: 'original', label: 'Original' },
+          { value: 'voice', label: 'Sin música' },
+          { value: 'music', label: 'Sin voz' },
+        ]}
+      />
+      {(
+        [
+          ['Voz', voice, (v: number) => setMix(media.id, v, music, `mix-v:${media.id}`)],
+          ['Música', music, (v: number) => setMix(media.id, voice, v, `mix-m:${media.id}`)],
+        ] as const
+      ).map(([label, value, set]) => (
+        <label key={label} className="flex items-center gap-2 text-[11px] text-muted">
+          <span className="w-10">{label}</span>
+          <input type="range" min={0} max={1} step={0.05} value={value} onChange={(e) => set(Number(e.target.value))} className="min-w-0 flex-1" />
+          <span className="w-8 text-right tabular-nums">{Math.round(value * 100)}%</span>
+        </label>
+      ))}
+      {preparing && (
+        <span className="flex items-center gap-1 text-[11px] text-faint">
+          <Loader2 size={11} className="animate-spin" /> Preparando la mezcla para la vista previa…
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ClipsTab() {
   const doc = useEditor((s) => s.doc)!;
   const media = useEditor((s) => s.media);
@@ -208,6 +307,7 @@ function ClipsTab() {
             </p>
             <MediaStatus media={m} />
             <TranscriptStatus media={m} />
+            {m.hasAudio && m.status !== 'error' && <AudioControls media={m} />}
             {!onTimeline.has(m.id) && m.status !== 'error' && (
               <Button size="sm" variant="ghost" className="self-start px-1.5" onClick={() => addClipInstance(m)}>
                 <Plus size={12} /> Añadir a la línea de tiempo

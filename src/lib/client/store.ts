@@ -49,6 +49,8 @@ interface EditorState {
   status: ServerStatus | null;
   /** Local transcription installer dialog. */
   setupOpen: boolean;
+  /** Preview videos with the chosen voice/music mix, per media id. */
+  mixUrls: Record<string, string>;
 
   load(doc: ProjectDoc): void;
   /** Applies a pure update to the document as one undo step. */
@@ -86,6 +88,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   toasts: [],
   status: null,
   setupOpen: false,
+  mixUrls: {},
 
   load: (doc) => set({ doc, past: [], future: [], lastCommit: null, selection: null, saveState: 'saved' }),
 

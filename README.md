@@ -17,6 +17,7 @@ Next.js 16 + TypeScript + Tailwind 4 · FFmpeg · whisper.cpp local.
 | Transcripción local   | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                                  |
 | Edición por texto     | Selecciona palabras (arrastrar o Shift+clic) y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar. Doble clic corrige el texto.        |
 | Tu guión              | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                                      |
+| Separar voz y música  | Separa la voz de la música de fondo de cada clip con IA local (sin API) para quitar la música, quitar la voz o ajustar el volumen de cada una.                                                                                        |
 | Texto descargable     | El texto del vídeo queda en el panel derecho: cópialo o descárgalo en TXT, o como subtítulos SRT con tiempos.                                                                                                                         |
 | Auto-limpiar          | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                                     |
 | Subtítulos TikTok     | Palabra a palabra, texto blanco con la palabra activa en amarillo `#FFE600`, fuente bold, abajo y centrado. Fuente, colores, tamaño, contorno, sombra, posición, palabras por bloque y mayúsculas configurables, con estilos rápidos. |
@@ -98,6 +99,19 @@ No hace falta, pero si prefieres transcribir en la nube pon en `.env.local` `OPE
 
 Whisper tiende a «limpiar» las vacilaciones y a no escribir «eh» o «mm». Para que las conserve, se le da un texto de contexto lleno de muletillas (`TRANSCRIPTION_PROMPT`, se puede cambiar). Aun así, si alguna no aparece en el texto, el quitado de silencios la elimina igualmente porque detecta el hueco en la transcripción.
 
+## Separar la voz de la música
+
+En la tarjeta de cada clip (panel izquierdo) pulsa **Separar voz y música**. La primera vez se descarga el modelo de separación (unos 64 MB, una sola vez); después funciona sin internet. Al terminar puedes elegir:
+
+- **Original**: el audio tal cual.
+- **Sin música**: solo la voz.
+- **Sin voz**: solo la música.
+- O ajustar con los deslizadores el volumen de la voz y de la música por separado.
+
+La vista previa y el MP4 exportado usan esa mezcla. Con la voz separada, el quitado de silencios se calcula sobre la voz limpia, así que si el clip tenía música de fondo conviene pulsar **Silencios** otra vez después de separar.
+
+Cómo funciona: se usa el modelo MDX-Net «Kim_Vocal_2» de [Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui), ejecutado en tu ordenador con `onnxruntime-node` en un proceso aparte (`worker/separate.mjs`). El modelo extrae la voz y la música es el resto. Las dos pistas se guardan sin pérdida (FLAC) junto al clip. En la prueba, 24 segundos de audio se separaron en unos 15 segundos con 4 núcleos.
+
 ## Flujo de trabajo
 
 1. **Sube los clips**: arrástralos a la ventana o al panel izquierdo. Se analizan y se transcriben en segundo plano; el progreso se ve en el panel y en la transcripción. En cuanto terminan, **se les quitan los silencios automáticamente** (desactivable en los ajustes de «Auto-limpiar»).
@@ -106,8 +120,9 @@ Whisper tiende a «limpiar» las vacilaciones y a no escribir «eh» o «mm». P
 4. **Tu guión (opcional)**: botón _Guión_ de la barra «Texto». Pega lo que escribiste (o abre un .txt) y pulsa _Aplicar a los subtítulos_: se sincroniza con tu voz y los subtítulos usan tus palabras exactas. El guión se guarda en el proyecto.
 5. **Descarga el texto**: en la barra «Texto», _Copiar_, _TXT_ (el texto del vídeo final) o _SRT_ (subtítulos con tiempos para YouTube, CapCut, etc.).
 6. **Subtítulos**: pestaña _Estilo de subtítulos_: estilos rápidos, fuente, tamaño, colores del texto y de la palabra activa, contorno, sombra, posición, palabras por bloque, mayúsculas y puntuación. Lo que ves en la vista previa es lo que se incrusta en el MP4.
-7. **B-roll y música**: pestañas _B-roll_ y _Música_ del panel izquierdo. Arrastra a su pista o pulsa + para añadir en el cursor.
-8. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
+7. **Música de fondo del propio clip**: si quieres quitarla (o quitar la voz), usa _Separar voz y música_ en la tarjeta del clip.
+8. **B-roll y música**: pestañas _B-roll_ y _Música_ del panel izquierdo. Arrastra a su pista o pulsa + para añadir en el cursor.
+9. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
 
 Colores del texto tachado: rojo = corte manual, naranja = muletilla, morado = toma repetida, gris = silencio.
 

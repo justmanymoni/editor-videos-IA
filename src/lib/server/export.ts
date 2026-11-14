@@ -8,6 +8,7 @@
  * subtitles burned in with libass using the same fonts as the preview.
  */
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import type { ProjectDoc, Word } from '../shared/types';
 import { OUTPUT_FPS, OUTPUT_HEIGHT, OUTPUT_WIDTH } from '../shared/types';
@@ -19,13 +20,15 @@ import { getFont } from '../shared/fonts';
 import { config } from './config';
 import { ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
 import type { JobContext } from './jobs';
-import { getMedia, readTranscript } from './media-store';
+import { getMedia, mediaPaths, readTranscript } from './media-store';
 
 export interface PlanMedia {
   id: string;
   kind: 'video' | 'image' | 'audio';
   sourcePath: string;
   hasAudio: boolean;
+  /** Separated voice and music (FLAC), when available. */
+  stems?: { voice: string; music: string };
 }
 
 export interface ExportPlan {
@@ -86,7 +89,16 @@ export function buildExportPlan(doc: ProjectDoc, media: Map<string, PlanMedia>, 
     filters.push(`[${vin}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},select='${expr}',setpts=N/${FPS}/TB[vr${k}]`);
     filters.push(...fitChain(`vr${k}`, `v${k}`, doc.settings.fitMode, k));
     let audio = `${vin}:a:0`;
-    if (!m.hasAudio) {
+    const mix = doc.audioMix?.[m.id];
+    if (m.hasAudio && mix && m.stems) {
+      // Separated voice and music at the chosen volumes, instead of the original audio.
+      const vi = inputs.length;
+      inputs.push(['-ss', num(s0), '-t', num(span + 0.5), '-i', m.stems.voice], ['-ss', num(s0), '-t', num(span + 0.5), '-i', m.stems.music]);
+      filters.push(
+        `[${vi}:a:0]volume=${num(mix.voice)}[sv${k}];[${vi + 1}:a:0]volume=${num(mix.music)}[sm${k}];[sv${k}][sm${k}]amix=inputs=2:normalize=0[mx${k}]`,
+      );
+      audio = `mx${k}`;
+    } else if (!m.hasAudio) {
       audio = `${inputs.length}:a:0`;
       inputs.push(['-f', 'lavfi', '-t', num(span + 0.5), '-i', 'anullsrc=r=48000:cl=stereo']);
     }
@@ -187,7 +199,12 @@ export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: Jo
     } catch {
       throw new Error(`No se encuentra el archivo original de "${rec.name}".`);
     }
-    media.set(id, { id, kind: rec.kind, sourcePath: rec.sourcePath, hasAudio: rec.hasAudio });
+    const paths = mediaPaths(id);
+    const stems =
+      rec.separation?.status === 'done' && existsSync(paths.voice) && existsSync(paths.music)
+        ? { voice: paths.voice, music: paths.music }
+        : undefined;
+    media.set(id, { id, kind: rec.kind, sourcePath: rec.sourcePath, hasAudio: rec.hasAudio, stems });
     if (rec.role === 'clip') transcripts[id] = (await readTranscript(id))?.words;
   }
 

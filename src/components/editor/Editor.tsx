@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
-import { useAutoSilence, useAutosave, useMediaSync, useShortcuts } from '@/lib/client/hooks';
+import { useAutoSilence, useAutosave, useMediaSync, useMixPreviews, useShortcuts } from '@/lib/client/hooks';
 import { refreshResources, uploadClips } from '@/lib/client/actions';
 import { player } from '@/lib/client/player';
 import { Modal, Toasts } from '@/components/ui';
@@ -42,7 +42,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         const project = await api.project(projectId);
         if (cancelled) return;
         const s = useEditor.getState();
-        s.set({ media: {}, transcripts: {}, envelopes: {}, uploads: [] });
+        s.set({ media: {}, transcripts: {}, envelopes: {}, uploads: [], mixUrls: {} });
         s.upsertMedia(await api.media(project.media));
         s.load(project);
         api
@@ -61,6 +61,7 @@ export default function Editor({ projectId }: { projectId: string }) {
 
   useMediaSync();
   useAutoSilence();
+  useMixPreviews();
   const saveNow = useAutosave();
   const openHelp = useCallback(() => setHelpOpen(true), []);
   useShortcuts(saveNow, openHelp);

@@ -21,6 +21,15 @@ export interface TranscriptState {
   language: string | null;
 }
 
+export interface SeparationState {
+  status: 'none' | 'queued' | 'running' | 'done' | 'error';
+  progress: number;
+  message: string | null;
+  error: string | null;
+}
+
+export const NO_SEPARATION: SeparationState = { status: 'none', progress: 0, message: null, error: null };
+
 export interface MediaInfo {
   id: string;
   name: string;
@@ -47,6 +56,8 @@ export interface MediaInfo {
   progress: number;
   error: string | null;
   transcript: TranscriptState;
+  /** Voice / music separation of the clip's audio. */
+  separation: SeparationState;
 }
 
 export interface Word {
@@ -138,6 +149,12 @@ export interface SubtitleStyle {
   activeScale: number;
 }
 
+/** Volumes of the separated voice and music of a clip (1 = original level). */
+export interface AudioMix {
+  voice: number;
+  music: number;
+}
+
 export interface WordOverride {
   text?: string;
   /** Hide from subtitles without cutting the video. */
@@ -178,6 +195,8 @@ export interface ProjectDoc {
   words: Record<string, WordOverride>;
   /** Written script pasted by the user (used to correct the subtitles). */
   script: string;
+  /** Per media id: play the separated voice and music at these volumes instead of the original audio. */
+  audioMix: Record<string, AudioMix>;
 }
 
 export interface ProjectSummary {
@@ -188,7 +207,7 @@ export interface ProjectSummary {
   clipCount: number;
 }
 
-export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup';
+export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup' | 'separate' | 'mix';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
 export interface JobInfo {
@@ -271,6 +290,7 @@ export function createProjectDoc(id: string, name: string, language = 'es'): Pro
     subtitles: { ...DEFAULT_SUBTITLE_STYLE },
     words: {},
     script: '',
+    audioMix: {},
   };
 }
 
@@ -287,6 +307,7 @@ export function normalizeProjectDoc(raw: ProjectDoc): ProjectDoc {
     subtitles: { ...DEFAULT_SUBTITLE_STYLE, ...(raw.subtitles ?? {}) },
     words: raw.words ?? {},
     script: raw.script ?? '',
+    audioMix: raw.audioMix ?? {},
   };
 }
 

@@ -41,6 +41,8 @@ describe.skipIf(!hasFfmpeg)('export (FFmpeg)', () => {
       const v2 = path.join(dir, 'v2.mp4');
       const img = path.join(dir, 'img.png');
       const mus = path.join(dir, 'mus.mp3');
+      const voiceStem = path.join(dir, 'voice.flac');
+      const musicStem = path.join(dir, 'music.flac');
       ff(
         '-f',
         'lavfi',
@@ -62,9 +64,11 @@ describe.skipIf(!hasFfmpeg)('export (FFmpeg)', () => {
       ff('-f', 'lavfi', '-i', 'testsrc=s=1080x1920:r=30:d=4', '-c:v', 'libx264', '-preset', 'ultrafast', v2);
       ff('-f', 'lavfi', '-i', 'color=c=red:s=600x600', '-frames:v', '1', img);
       ff('-f', 'lavfi', '-i', 'sine=f=500:d=20', '-c:a', 'libmp3lame', mus);
+      ff('-f', 'lavfi', '-i', 'sine=f=700:d=10', '-ac', '2', '-ar', '44100', '-c:a', 'flac', voiceStem);
+      ff('-f', 'lavfi', '-i', 'sine=f=900:d=10', '-ac', '2', '-ar', '44100', '-c:a', 'flac', musicStem);
 
       const media = new Map<string, PlanMedia>([
-        ['m1', { id: 'm1', kind: 'video', sourcePath: v1, hasAudio: true }],
+        ['m1', { id: 'm1', kind: 'video', sourcePath: v1, hasAudio: true, stems: { voice: voiceStem, music: musicStem } }],
         ['m2', { id: 'm2', kind: 'video', sourcePath: v2, hasAudio: false }],
         ['img', { id: 'img', kind: 'image', sourcePath: img, hasAudio: false }],
         ['mus', { id: 'mus', kind: 'audio', sourcePath: mus, hasAudio: true }],
@@ -94,11 +98,13 @@ describe.skipIf(!hasFfmpeg)('export (FFmpeg)', () => {
         audio: [{ id: 'a', mediaId: 'mus', start: 1, duration: 20, srcIn: 0, volume: 0.2, fadeIn: 0.5, fadeOut: 0.5 }],
       };
       doc.settings.fitMode = 'blur';
+      doc.audioMix = { m1: { voice: 1, music: 0 } };
 
       const plan = buildExportPlan(doc, media, { m1: words });
       const expected = 2 + (6.2 - 3.5) + (10 - 7.1) + 2.5;
       expect(plan.duration).toBeCloseTo(expected, 5);
       expect(plan.ass).toContain('Dialogue:');
+      expect(plan.filter).toContain('volume=0[sm0]');
 
       const out = path.join(dir, 'out.mp4');
       let last = 0;
@@ -112,6 +118,20 @@ describe.skipIf(!hasFfmpeg)('export (FFmpeg)', () => {
       expect(Number(/nb_read_frames=(\d+)/.exec(v)![1])).toBe(Math.round(expected * 30));
       const a = probe(out, 'stream=duration', 'a:0');
       expect(Math.abs(Number(/duration=([\d.]+)/.exec(a)![1]) - expected)).toBeLessThan(0.05);
+
+      // Audio mix: the voice stem (700 Hz) is heard, the music stem (900 Hz) is muted.
+      const pcm = execFileSync('ffmpeg', ['-v', 'error', '-ss', '0.5', '-t', '1', '-i', out, '-ac', '1', '-ar', '8000', '-f', 's16le', 'pipe:1']);
+      const power = (f: number) => {
+        let re = 0;
+        let im = 0;
+        for (let i = 0; i < pcm.length / 2; i++) {
+          const x = pcm.readInt16LE(i * 2);
+          re += x * Math.cos((2 * Math.PI * f * i) / 8000);
+          im += x * Math.sin((2 * Math.PI * f * i) / 8000);
+        }
+        return re * re + im * im;
+      };
+      expect(power(700)).toBeGreaterThan(100 * power(900));
 
       // Subtitle pixels: the active word is yellow at the subtitle position.
       const raw = execFileSync('ffmpeg', [

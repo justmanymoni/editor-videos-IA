@@ -45,6 +45,7 @@ function TimeDisplay() {
 export function Preview() {
   const doc = useEditor((s) => s.doc)!;
   const media = useEditor((s) => s.media);
+  const mixUrls = useEditor((s) => s.mixUrls);
   const segs = useSegments();
   const pages = useSubtitlePages();
   const playing = usePlayback((s) => s.playing);
@@ -89,7 +90,7 @@ export function Preview() {
                 <video
                   key={`${m.id}-${slot}`}
                   ref={deckRef(deckKey(m.id, slot))}
-                  src={mediaUrl.preview(m)}
+                  src={(doc.audioMix[m.id] && mixUrls[m.id]) || mediaUrl.preview(m)}
                   preload="auto"
                   playsInline
                   className="absolute inset-0 h-full w-full"

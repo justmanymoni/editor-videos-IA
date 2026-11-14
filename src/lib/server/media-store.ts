@@ -7,6 +7,7 @@ import path from 'node:path';
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { nanoid } from 'nanoid';
 import type { MediaInfo, MediaKind, MediaRole, Transcript } from '../shared/types';
+import { NO_SEPARATION } from '../shared/types';
 import { config } from './config';
 import { probe } from './ffmpeg';
 
@@ -32,6 +33,10 @@ export function mediaPaths(id: string) {
     proxy: path.join(dir, 'proxy.mp4'),
     envelope: path.join(dir, 'envelope.bin'),
     transcript: path.join(dir, 'transcript.json'),
+    voice: path.join(dir, 'voice.flac'),
+    music: path.join(dir, 'music.flac'),
+    voiceEnvelope: path.join(dir, 'envelope-voice.bin'),
+    mix: (voice: number, music: number) => path.join(dir, `mix-v${Math.round(voice * 100)}-m${Math.round(music * 100)}.mp4`),
   };
 }
 
@@ -54,6 +59,7 @@ export async function getMedia(id: string): Promise<MediaRecord | null> {
   if (hit) return hit;
   try {
     const rec = JSON.parse(await readFile(/*turbopackIgnore: true*/ mediaPaths(id).meta, 'utf8')) as MediaRecord;
+    rec.separation ??= { ...NO_SEPARATION };
     cache.set(id, rec);
     return rec;
   } catch {
@@ -70,7 +76,12 @@ export function updateMedia(id: string, patch: Partial<MediaRecord> | ((rec: Med
       const rec = await getMedia(id);
       if (!rec) throw new Error(`Medio ${id} no encontrado`);
       const changes = typeof patch === 'function' ? patch(rec) : patch;
-      const updated: MediaRecord = { ...rec, ...changes, transcript: { ...rec.transcript, ...(changes.transcript ?? {}) } };
+      const updated: MediaRecord = {
+        ...rec,
+        ...changes,
+        transcript: { ...rec.transcript, ...(changes.transcript ?? {}) },
+        separation: { ...rec.separation, ...(changes.separation ?? {}) },
+      };
       cache.set(id, updated);
       await writeJsonAtomic(mediaPaths(id).meta, updated);
       return updated;
@@ -125,6 +136,7 @@ export async function registerFile(opts: { id?: string; filePath: string; name: 
     progress: 0,
     error: null,
     transcript: { status: 'none', progress: 0, error: null, provider: null, language: null },
+    separation: { ...NO_SEPARATION },
     sourcePath: opts.filePath,
     mtimeMs: st.mtimeMs,
   };

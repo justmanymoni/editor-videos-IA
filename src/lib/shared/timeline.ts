@@ -4,7 +4,7 @@
  * transcript state, subtitles, export) is computed from these segments.
  */
 import type { CutReason, MainClip, ProjectDoc, Range, Word, WordOverride } from './types';
-import { wordKey } from './types';
+import { clipSpeed, wordKey } from './types';
 import { FRAME, clamp, mergeRanges, overlap, quantize, subtractRanges } from './ranges';
 
 const EPS = 1e-6;
@@ -19,6 +19,14 @@ export interface Segment {
   srcEnd: number;
   tlStart: number;
   tlEnd: number;
+  /** Playback speed chosen for the clip (1 = normal). */
+  speed: number;
+  /**
+   * Source seconds per timeline second. It is the speed, adjusted so that the
+   * segment (whose length is rounded to whole frames) maps exactly onto its
+   * source range; exactly 1 at normal speed.
+   */
+  rate: number;
 }
 
 /** Kept source ranges of a clip, snapped to the 30 fps grid. */
@@ -35,9 +43,11 @@ export function buildSegments(clips: MainClip[]): Segment[] {
   const segs: Segment[] = [];
   let t = 0;
   clips.forEach((clip, clipIndex) => {
+    const speed = clipSpeed(clip);
     keptRanges(clip).forEach((r, rangeIndex) => {
-      const tlEnd = quantize(t + (r.end - r.start));
-      segs.push({ clipId: clip.id, mediaId: clip.mediaId, clipIndex, rangeIndex, srcStart: r.start, srcEnd: r.end, tlStart: t, tlEnd });
+      const tlEnd = Math.max(quantize(t + (r.end - r.start) / speed), quantize(t + FRAME));
+      const rate = speed === 1 ? 1 : (r.end - r.start) / (tlEnd - t);
+      segs.push({ clipId: clip.id, mediaId: clip.mediaId, clipIndex, rangeIndex, srcStart: r.start, srcEnd: r.end, tlStart: t, tlEnd, speed, rate });
       t = tlEnd;
     });
   });
@@ -63,7 +73,7 @@ export function timelineToSource(segs: Segment[], t: number) {
   const index = segmentIndexAt(segs, t);
   if (index < 0) return null;
   const seg = segs[index];
-  return { index, seg, src: seg.srcStart + clamp(t - seg.tlStart, 0, seg.tlEnd - seg.tlStart) };
+  return { index, seg, src: seg.srcStart + clamp((t - seg.tlStart) * seg.rate, 0, seg.srcEnd - seg.srcStart) };
 }
 
 /**
@@ -73,7 +83,7 @@ export function timelineToSource(segs: Segment[], t: number) {
 export function sourceToTimeline(segs: Segment[], clipId: string, src: number, mode: 'exact' | 'next' = 'exact'): number | null {
   for (const seg of segs) {
     if (seg.clipId !== clipId || seg.srcEnd <= src + EPS) continue;
-    if (seg.srcStart <= src + EPS) return seg.tlStart + Math.max(0, src - seg.srcStart);
+    if (seg.srcStart <= src + EPS) return seg.tlStart + Math.max(0, src - seg.srcStart) / seg.rate;
     return mode === 'next' ? seg.tlStart : null;
   }
   return null;
@@ -137,8 +147,8 @@ export function buildClipWords(
         const o = overlap(word, { start: seg.srcStart, end: seg.srcEnd });
         if (o <= 0) continue;
         kept += o;
-        if (tlStart === null) tlStart = seg.tlStart + (Math.max(word.start, seg.srcStart) - seg.srcStart);
-        tlEnd = seg.tlStart + (Math.min(word.end, seg.srcEnd) - seg.srcStart);
+        if (tlStart === null) tlStart = seg.tlStart + (Math.max(word.start, seg.srcStart) - seg.srcStart) / seg.rate;
+        tlEnd = seg.tlStart + (Math.min(word.end, seg.srcEnd) - seg.srcStart) / seg.rate;
       }
       const hardCovered = hardCuts.reduce((s, c) => s + overlap(word, c), 0);
       const deleted = kept < Math.min(0.05, dur * 0.5) || hardCovered > dur * 0.5;

@@ -280,7 +280,8 @@ export function Timeline({ height }: { height: number }) {
     if (!d) return;
     const dt = ('dx' in d ? d.dx : 0) / p;
     if (d.kind === 'seg-trim' && Math.abs(d.dx) > 1) {
-      trimSegment(d.seg.clipId, d.seg.rangeIndex, d.edge, (d.edge === 'start' ? d.seg.srcStart : d.seg.srcEnd) + dt);
+      // The drag is measured on the timeline; the clip is trimmed in its own (source) time.
+      trimSegment(d.seg.clipId, d.seg.rangeIndex, d.edge, (d.edge === 'start' ? d.seg.srcStart : d.seg.srcEnd) + dt * d.seg.rate);
     } else if (d.kind === 'seg-move') {
       if (d.moved) moveSegment(d.seg.clipId, d.seg.rangeIndex, (d.seg.tlStart + d.seg.tlEnd) / 2 + dt);
       else {
@@ -558,16 +559,17 @@ export function Timeline({ height }: { height: number }) {
                 let to = seg.srcEnd;
                 const active = drag && 'seg' in drag && drag.seg.clipId === seg.clipId && drag.seg.rangeIndex === seg.rangeIndex ? drag : null;
                 if (active?.kind === 'seg-trim') {
-                  const dt = active.dx / pps;
+                  // Source seconds added or removed, and the pixels they take at the clip's speed.
+                  const dt = (active.dx / pps) * seg.rate;
                   if (active.edge === 'start') {
                     const d = clamp(dt, -seg.srcStart, seg.srcEnd - seg.srcStart - FRAME);
-                    left += d * pps;
-                    w -= d * pps;
+                    left += (d / seg.rate) * pps;
+                    w -= (d / seg.rate) * pps;
                     from += d;
                   } else {
                     const max = m?.kind === 'image' ? 3600 : (m?.duration ?? seg.srcEnd);
                     const d = clamp(dt, -(seg.srcEnd - seg.srcStart - FRAME), max - seg.srcEnd);
-                    w += d * pps;
+                    w += (d / seg.rate) * pps;
                     to += d;
                   }
                 }
@@ -608,6 +610,11 @@ export function Timeline({ height }: { height: number }) {
                     {w > 60 && (
                       <span className="pointer-events-none absolute top-1 left-10 truncate pr-2 text-[10px] font-medium text-white/85">
                         {m?.name}
+                      </span>
+                    )}
+                    {seg.speed !== 1 && w > 34 && (
+                      <span className="pointer-events-none absolute right-1 bottom-0.5 rounded bg-black/70 px-1 text-[9px] font-semibold text-accent">
+                        {Math.round(seg.speed * 100) / 100}×
                       </span>
                     )}
                     {seg.rangeIndex > 0 && <div className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-danger/80" />}

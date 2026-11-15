@@ -6,7 +6,7 @@
  */
 import { nanoid } from 'nanoid';
 import type { AudioItem, BrollItem, MainClip, MediaInfo, ProjectDoc, TextItem, WordOverride } from '@/lib/shared/types';
-import { DEFAULT_TEXT, OUTPUT_HEIGHT, OUTPUT_WIDTH, wordKey } from '@/lib/shared/types';
+import { DEFAULT_TEXT, MAX_SPEED, MIN_SPEED, OUTPUT_HEIGHT, OUTPUT_WIDTH, wordKey } from '@/lib/shared/types';
 import { FRAME, quantize } from '@/lib/shared/ranges';
 import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTimeline, timelineToSource, wordsInClip } from '@/lib/shared/timeline';
 import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimItemAt, trimRange, wordRunRanges } from '@/lib/shared/edit';
@@ -425,6 +425,23 @@ export function trimSegment(clipId: string, rangeIndex: number, edge: 'start' | 
     }),
     coalesceKey,
   );
+}
+
+/**
+ * Sets the playback speed of some clips (or of every clip when `clipIds` is
+ * null). Photos have no speed: their length is changed by dragging their edge.
+ */
+export function setClipSpeed(clipIds: string[] | null, speed: number, coalesceKey?: string) {
+  const s = ed();
+  const value = Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(speed * 100) / 100));
+  s.commit((d) => {
+    for (const c of d.clips) {
+      if (clipIds && !clipIds.includes(c.id)) continue;
+      if (s.media[c.mediaId]?.kind === 'image') continue;
+      if (value === 1) delete c.speed;
+      else c.speed = value;
+    }
+  }, coalesceKey);
 }
 
 export function moveSegment(clipId: string, rangeIndex: number, dropTime: number) {

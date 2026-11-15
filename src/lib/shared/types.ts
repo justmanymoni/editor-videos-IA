@@ -106,7 +106,14 @@ export interface MainClip {
   cuts: Cut[];
   /** Silences are removed automatically once its audio and transcript are ready. */
   autoClean?: boolean;
+  /** Playback speed (1 = normal, 2 = twice as fast). The pitch of the voice is kept. */
+  speed?: number;
 }
+
+export const MIN_SPEED = 0.25;
+export const MAX_SPEED = 4;
+/** Speed of a clip, within the supported range. */
+export const clipSpeed = (clip: Pick<MainClip, 'speed'>) => Math.min(MAX_SPEED, Math.max(MIN_SPEED, clip.speed || 1));
 
 /** B-roll overlay placed on the timeline. */
 export interface BrollItem {

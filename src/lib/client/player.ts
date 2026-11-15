@@ -108,7 +108,8 @@ class PlayerEngine {
   /** Source time of a deck: the video position, or the photo's own clock. */
   private deckTime(el: Deck) {
     if (isVideo(el)) return el.currentTime;
-    return this.still.src + (this.still.running ? (performance.now() - this.still.wall) / 1000 : 0);
+    const rate = this.segs[this.cur]?.rate ?? 1;
+    return this.still.src + (this.still.running ? ((performance.now() - this.still.wall) / 1000) * rate : 0);
   }
 
   private activate(i: number, src: number, play: boolean) {
@@ -119,6 +120,9 @@ class PlayerEngine {
     if (!el) return;
     if (isVideo(el)) {
       if (Math.abs(el.currentTime - src) > 0.01) el.currentTime = src;
+      // The clip's own speed; the browser keeps the pitch of the voice, as the export does.
+      const rate = this.segs[i]?.rate ?? 1;
+      if (el.playbackRate !== rate) el.playbackRate = rate;
       el.volume = clamp(this.mainVolume, 0, 1);
       if (play) el.play().catch(() => this.pause());
     } else this.still = { src, wall: performance.now(), running: play };
@@ -151,7 +155,10 @@ class PlayerEngine {
     this.playing = false;
     this.stopAt = null;
     cancelAnimationFrame(this.raf);
-    if (this.still.running) this.still = { src: this.still.src + (performance.now() - this.still.wall) / 1000, wall: 0, running: false };
+    if (this.still.running) {
+      const rate = this.segs[this.cur]?.rate ?? 1;
+      this.still = { src: this.still.src + ((performance.now() - this.still.wall) / 1000) * rate, wall: 0, running: false };
+    }
     for (const d of this.decks.values()) if (isVideo(d) && !d.paused) d.pause();
     for (const o of this.overlays.values()) if (o instanceof HTMLVideoElement && !o.paused) o.pause();
     for (const a of this.audios.values()) if (!a.paused) a.pause();
@@ -200,7 +207,7 @@ class PlayerEngine {
       seg = this.segs[this.cur];
       el = this.deckFor(this.cur)!;
     }
-    const t = seg.tlStart + clamp(this.deckTime(el) - seg.srcStart, 0, seg.tlEnd - seg.tlStart);
+    const t = seg.tlStart + clamp((this.deckTime(el) - seg.srcStart) / seg.rate, 0, seg.tlEnd - seg.tlStart);
     if (this.stopAt !== null && t >= this.stopAt) {
       this.pause();
       return;

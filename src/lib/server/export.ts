@@ -60,6 +60,18 @@ const HALF = 0.5 / FPS;
 const num = (x: number) => String(Math.round(x * 100000) / 100000);
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
+/** `atempo` changes the speed keeping the pitch; one instance only goes down to half speed, so slower ones are chained. */
+export function atempo(speed: number): string {
+  const parts: string[] = [];
+  let rest = speed;
+  while (rest < 0.5) {
+    parts.push('atempo=0.5');
+    rest /= 0.5;
+  }
+  parts.push(`atempo=${num(rest)}`);
+  return parts.join(',');
+}
+
 function fitChain(input: string, output: string, mode: ProjectDoc['settings']['fitMode'], k: number): string[] {
   if (mode !== 'blur') {
     return [`[${input}]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p[${output}]`];
@@ -106,7 +118,13 @@ export function buildExportPlan(
     // A photo on the main track is a looped still: any part of it looks the same.
     if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(span + 0.5), '-i', m.sourcePath]);
     else inputs.push(['-ss', num(s0), '-t', num(span + 0.5), '-i', m.sourcePath]);
-    filters.push(`[${vin}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},select='${expr}',setpts=N/${FPS}/TB[vr${k}]`);
+    // A clip at another speed: retime the kept frames and force the exact number of frames it takes on the timeline.
+    const speed = m.kind === 'image' ? 1 : run[0].speed;
+    const frames = Math.round((run[run.length - 1].tlEnd - run[0].tlStart) * FPS);
+    const retimeV =
+      speed === 1 ? '' : `,setpts=PTS/${num(speed)},fps=${FPS},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/${FPS}/TB`;
+    const retimeA = speed === 1 ? '' : `,${atempo(speed)},apad=pad_dur=1,atrim=end_sample=${frames * 1600},asetpts=N/SR/TB`;
+    filters.push(`[${vin}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},select='${expr}',setpts=N/${FPS}/TB${retimeV}[vr${k}]`);
     filters.push(...fitChain(`vr${k}`, `v${k}`, doc.settings.fitMode, k));
     let audio = `${vin}:a:0`;
     const mix = doc.audioMix?.[m.id];
@@ -123,7 +141,7 @@ export function buildExportPlan(
       inputs.push(['-f', 'lavfi', '-t', num(span + 0.5), '-i', 'anullsrc=r=48000:cl=stereo']);
     }
     filters.push(
-      `[${audio}]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetnsamples=n=1600:p=1,aselect='${expr}',asetpts=N/SR/TB[a${k}]`,
+      `[${audio}]asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetnsamples=n=1600:p=1,aselect='${expr}',asetpts=N/SR/TB${retimeA}[a${k}]`,
     );
   });
   filters.push(`${runs.map((_, k) => `[v${k}][a${k}]`).join('')}concat=n=${runs.length}:v=1:a=1[vcat][acat]`);

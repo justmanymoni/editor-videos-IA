@@ -4,6 +4,7 @@
   "private": true,
   "description": "Editor de vídeo vertical 9:16 basado en transcripción",
   "scripts": {
+    "app": "node scripts/start.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

@@ -306,6 +306,16 @@ export interface ServerStatus {
   resourcesDir: string;
   defaultLanguage: string;
   local: LocalTranscriberStatus;
+  /** A job (export, transcription…) is queued or running. */
+  busy: boolean;
+  /** Installed version of the app, when it runs from a git checkout. */
+  version: AppVersion | null;
+}
+
+export interface AppVersion {
+  commit: string;
+  /** ISO date of the last change. */
+  date: string;
 }
 
 export const DEFAULT_FILLERS = ['eh', 'ehm', 'em', 'mm', 'hmm', 'uh', 'um', 'o sea'];

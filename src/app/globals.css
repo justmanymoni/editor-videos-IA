@@ -105,8 +105,15 @@ input[type='range']::-moz-range-thumb {
   border-radius: 50%;
   background: #fff;
 }
-input[type='number']::-webkit-inner-spin-button {
-  opacity: 0.4;
+/* Plain number fields, without the browser's spin buttons. */
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* Subtitle text in the preview: outline drawn behind the fill like libass. */

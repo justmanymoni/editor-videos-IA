@@ -3,6 +3,7 @@ import type { ServerStatus } from '@/lib/shared/types';
 import { config, selectTranscriber, whisperCppBinary, whisperCppModel } from '@/lib/server/config';
 import { ffmpegVersion, ffprobeAvailable } from '@/lib/server/ffmpeg';
 import { jobs } from '@/lib/server/jobs';
+import { appVersion } from '@/lib/server/version';
 import { releaseAsset } from '@/lib/server/whisper-setup';
 
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,8 @@ export async function GET() {
       platform: process.platform,
       setupJobId: jobs.active('setup', 'whisper')?.id ?? null,
     },
+    busy: jobs.busy(),
+    version: await appVersion(),
   };
   return Response.json(status);
 }

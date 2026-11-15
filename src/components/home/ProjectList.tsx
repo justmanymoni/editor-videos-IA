@@ -53,8 +53,7 @@ export function ProjectList() {
           <p className="font-semibold text-danger">Falta FFmpeg{status.ffmpeg ? ' (no se encuentra ffprobe)' : ''}</p>
           <p className="mt-1 text-muted">
             La app lo necesita para leer y exportar los vídeos. En Windows instálalo con <code className="text-fg">winget install Gyan.FFmpeg</code>,
-            cierra todas las terminales y vuelve a ejecutar <code className="text-fg">npm run dev</code> en una nueva. En Mac:{' '}
-            <code className="text-fg">brew install ffmpeg</code>.
+            cierra esta app y vuelve a abrirla. En Mac: <code className="text-fg">brew install ffmpeg</code>.
           </p>
         </div>
       )}
@@ -127,6 +126,12 @@ export function ProjectList() {
           ))}
         </ul>
       </section>
+
+      {status?.version && (
+        <footer className="mt-auto text-xs text-faint">
+          Versión del {new Date(status.version.date).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })} · {status.version.commit}
+        </footer>
+      )}
     </main>
   );
 }

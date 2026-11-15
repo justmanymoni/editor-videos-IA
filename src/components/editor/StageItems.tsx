@@ -168,6 +168,13 @@ export function StageItems({
     const bottom = clamp(box.top + box.height, top + 4 * handle, OUTPUT_HEIGHT);
     box = { ...box, left, top, width: right - left, height: bottom - top };
   }
+  // A handle centred on a corner that lies on the edge of the frame would be clipped: keep it inside.
+  const offset = {
+    left: box && box.left < handle / 2 ? 0 : -handle / 2,
+    top: box && box.top < handle / 2 ? 0 : -handle / 2,
+    right: box && box.left + box.width > OUTPUT_WIDTH - handle / 2 ? 0 : -handle / 2,
+    bottom: box && box.top + box.height > OUTPUT_HEIGHT - handle / 2 ? 0 : -handle / 2,
+  };
   return (
     <>
       {texts
@@ -196,7 +203,7 @@ export function StageItems({
               data-handle="scale"
               onPointerDown={(e) => begin(e, 'scale', box.target)}
               className="pointer-events-auto absolute rounded-sm border-black bg-accent"
-              style={{ [h]: -handle / 2, [v]: -handle / 2, width: handle, height: handle, cursor, borderWidth: px, borderStyle: 'solid' }}
+              style={{ [h]: offset[h], [v]: offset[v], width: handle, height: handle, cursor, borderWidth: px, borderStyle: 'solid' }}
             />
           ))}
           {box.target.kind === 'text' && (

@@ -10,22 +10,25 @@ Next.js 16 + TypeScript + Tailwind 4 · FFmpeg · whisper.cpp local.
 
 ## Qué hace
 
-| Función               | Detalle                                                                                                                                                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Subida múltiple       | Arrastra varios mp4/mov a la vez. Cada clip aparece con miniatura, duración y estado, y se coloca en orden en la línea de tiempo.                                                                                                     |
-| Silencios automáticos | Al subir un clip se le quitan solos los silencios de más de 0,4 s (analizando el audio y los huecos de la transcripción). Se puede desactivar y deshacer.                                                                             |
-| Transcripción local   | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                                  |
-| Edición por texto     | Selecciona palabras (arrastrar o Shift+clic) y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar. Doble clic corrige el texto.        |
-| Tu guión              | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                                      |
-| Separar voz y música  | Separa la voz de la música de fondo de cada clip con IA local (sin API) para quitar la música, quitar la voz o ajustar el volumen de cada una.                                                                                        |
-| Texto descargable     | El texto del vídeo queda en el panel derecho: cópialo o descárgalo en TXT, o como subtítulos SRT con tiempos.                                                                                                                         |
-| Auto-limpiar          | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                                     |
-| Subtítulos TikTok     | Palabra a palabra, texto blanco con la palabra activa en amarillo `#FFE600`, fuente bold, abajo y centrado. Fuente, colores, tamaño, contorno, sombra, posición, palabras por bloque y mayúsculas configurables, con estilos rápidos. |
-| Vista previa 9:16     | Reproduce la secuencia editada saltando los cortes. Clic en una palabra = salta a ese punto; la palabra que suena se resalta en la transcripción. Modo «Rellenar» o «Desenfoque» para clips horizontales.                             |
-| Línea de tiempo       | Pistas de vídeo principal, B-roll, audio/música y subtítulos. Mover, recortar (bordes) y dividir (S) clips; zoom con Ctrl+rueda.                                                                                                      |
-| B-roll                | Carpeta de recursos (`recursos/`) con clips e imágenes que se arrastran a la pista. Sugerencias automáticas según las palabras clave de cada frase.                                                                                   |
-| Exportar              | MP4 H.264 1080×1920 a 30 fps con los subtítulos incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                                                   |
-| Proyecto              | Autoguardado en JSON (clips, cortes, B-roll, música, guión y estilo de subtítulos). Descarga e importación del JSON. Deshacer/rehacer.                                                                                                |
+| Función                | Detalle                                                                                                                                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interfaz tipo CapCut   | Herramientas a la izquierda (Multimedia, Audio, Texto), reproductor en el centro o a la derecha, propiedades a su lado y línea de tiempo abajo. Todos los paneles se redimensionan arrastrando sus bordes.                |
+| Importar               | Vídeos, fotos y audio, arrastrándolos o con el botón **+**. Los vídeos se colocan solos en la pista principal; las fotos pueden ir en la pista principal o encima como superposición.                                     |
+| Silencios automáticos  | Al subir un clip se le quitan solos los silencios de más de 0,4 s (analizando el audio y los huecos de la transcripción). Se puede desactivar y deshacer.                                                                 |
+| Transcripción local    | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                      |
+| Subtítulos automáticos | Palabra a palabra, con estilos rápidos y 37 fuentes (negritas, normales, cursivas, clásicas, manuscritas). Se **arrastran en el vídeo** y se editan con **doble clic**. Resaltado de la palabra y animaciones opcionales. |
+| Textos manuales        | Escribe o **dicta** un texto y colócalo donde quieras: arrástralo, cámbiale el tamaño, gíralo o cúrvalo (arco, círculo, onda). Las barras `/` lo separan en bloques independientes.                                       |
+| Tu voz                 | Botón **Grabar mi voz**: la grabación se añade a la pista de audio donde está el cursor.                                                                                                                                  |
+| Cortar                 | Dividir (S), borrar lo que queda a la izquierda (Q) o a la derecha (W) del cursor y eliminar (Supr) cualquier elemento: clip, texto, subtítulo, audio o superposición.                                                    |
+| Edición por texto      | En la pestaña Transcripción, selecciona palabras y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar.                     |
+| Auto-limpiar           | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                         |
+| Tu guión               | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                          |
+| Separar voz y música   | Separa la voz de la música de fondo de cada clip con IA local (sin API) para quitar la música, quitar la voz o ajustar el volumen de cada una.                                                                            |
+| Texto descargable      | La transcripción queda en el panel derecho: cópiala o descárgala en TXT, o como subtítulos SRT con tiempos.                                                                                                               |
+| Superposiciones        | Fotos, vídeos y pegatinas (PNG con transparencia) encima del vídeo: se mueven y se cambian de tamaño en el propio reproductor. Sugerencias de B-roll según lo que dices.                                                  |
+| Exportar               | MP4 H.264 1080×1920 a 30 fps con subtítulos, textos y superposiciones incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                 |
+| Proyecto               | Autoguardado en JSON. Descarga e importación del JSON. Deshacer/rehacer.                                                                                                                                                  |
+| Actualización sola     | Abriendo la app con `Verticut.bat` se descargan e instalan solas las novedades de GitHub. Ver [Actualización automática](#actualización-automática).                                                                      |
 
 ## Requisitos
 
@@ -39,27 +42,44 @@ Comprueba FFmpeg con `ffprobe -version` en una terminal nueva. Si no está en el
 
 ## Puesta en marcha
 
-```bash
-npm install
-```
+Necesitas además [Git](https://git-scm.com) para descargar la app y recibir las actualizaciones.
 
 ```bash
-npm run dev
+git clone https://github.com/justmanymoni/editor-videos-ia.git
 ```
 
-Abre <http://localhost:3000>. La primera vez, pulsa **Instalar** en la tarjeta «Transcripción local» (ver abajo). Después crea un proyecto y arrastra tus clips.
+Después, para abrirla:
+
+- **Windows**: doble clic en **`Verticut.bat`** (dentro de la carpeta descargada).
+- **Mac / Linux**: ejecuta `./verticut.sh` en esa carpeta.
+
+La primera vez instala sus componentes (tarda unos minutos); después abre sola <http://localhost:3000> en el navegador. Deja abierta la ventana negra mientras uses la app y ciérrala para apagarla.
+
+En la pantalla de inicio pulsa **Instalar** en la tarjeta «Transcripción local» (ver abajo). Después crea un proyecto y arrastra tus clips.
 
 `.env.local` es opcional: solo hace falta para cambiar rutas o ajustes (copia `.env.example`).
 
-Para usarlo sin recarga en caliente (más rápido):
+## Actualización automática
 
-```bash
-npm run build
-```
+Al abrir la app con `Verticut.bat` (o `./verticut.sh`, o `npm run app`) no hay que volver a escribir `git pull` ni `npm install`:
 
-```bash
-npm start
-```
+- Al arrancar y **cada minuto** comprueba si hay cambios nuevos en GitHub y los descarga.
+- Los cambios de la interfaz aparecen en el navegador sin hacer nada. Si la actualización lo necesita, reinstala los componentes y reinicia la app sola (tarda unos segundos y la página se recarga).
+- **Nunca actualiza a mitad de una exportación o una transcripción**: espera a que termine.
+- Tus proyectos, vídeos y modelos (`storage/`, `recursos/`) no se tocan.
+- Si has modificado a mano algún archivo del programa, no lo pisa: avisa en la ventana y sigue con tu versión. Para guardar tus cambios aparte (`git stash`) y actualizar: `Verticut.bat --descartar`.
+
+En la pantalla de inicio, abajo, se ve la fecha de la versión instalada.
+
+| Opción                       | Qué hace                                                           |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `--sin-actualizar`           | No busca actualizaciones                                           |
+| `--sin-navegador`            | No abre el navegador al arrancar                                   |
+| `--descartar`                | Guarda aparte tus cambios locales para poder actualizar            |
+| `PORT=3001`                  | Usa otro puerto (si el 3000 está ocupado elige el siguiente libre) |
+| `VERTICUT_UPDATE_SECONDS=60` | Cada cuántos segundos se comprueba (`0` lo desactiva)              |
+
+Si prefieres arrancarla a mano, sin actualizaciones: `npm install` y `npm run dev`.
 
 ## Transcripción de voz a texto (local, sin API)
 
@@ -114,44 +134,50 @@ Cómo funciona: se usa el modelo MDX-Net «Kim_Vocal_2» de [Ultimate Vocal Remo
 
 ## Flujo de trabajo
 
-1. **Sube los clips**: arrástralos a la ventana o al panel izquierdo. Se analizan y se transcriben en segundo plano; el progreso se ve en el panel y en la transcripción. En cuanto terminan, **se les quitan los silencios automáticamente** (desactivable en los ajustes de «Auto-limpiar»).
-2. **Limpia más** si quieres: en el panel derecho, _Muletillas_, _Tomas repetidas_ o _Limpiar todo_. El aviso indica cuánto se ha recortado. Todo se puede deshacer o restaurar.
-3. **Edita el texto**: selecciona y pulsa Supr para cortar, o usa la barra flotante (Cortar, Restaurar, Reproducir, Ocultar en subtítulos, Empezar subtítulo aquí). Las etiquetas grises entre palabras son pausas: clic para quitarlas o recuperarlas.
-4. **Tu guión (opcional)**: botón _Guión_ de la barra «Texto». Pega lo que escribiste (o abre un .txt) y pulsa _Aplicar a los subtítulos_: se sincroniza con tu voz y los subtítulos usan tus palabras exactas. El guión se guarda en el proyecto.
-5. **Descarga el texto**: en la barra «Texto», _Copiar_, _TXT_ (el texto del vídeo final) o _SRT_ (subtítulos con tiempos para YouTube, CapCut, etc.).
-6. **Subtítulos**: pestaña _Estilo de subtítulos_: estilos rápidos, fuente, tamaño, colores del texto y de la palabra activa, contorno, sombra, posición, palabras por bloque, mayúsculas y puntuación. Lo que ves en la vista previa es lo que se incrusta en el MP4.
-7. **Música de fondo del propio clip**: si quieres quitarla (o quitar la voz), usa _Separar voz y música_ en la tarjeta del clip.
-8. **B-roll y música**: pestañas _B-roll_ y _Música_ del panel izquierdo. Arrastra a su pista o pulsa + para añadir en el cursor.
-9. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
+1. **Importa**: arrastra vídeos, fotos o audio a la ventana o a la pestaña _Multimedia_. Los vídeos se añaden a la pista principal, se transcriben en segundo plano y **se les quitan los silencios automáticamente** (desactivable en los ajustes de «Auto-limpiar»). Con el **+** de cada archivo, o arrastrándolo a una pista, lo colocas donde quieras.
+2. **Corta**: mueve el cursor amarillo y usa los botones de la línea de tiempo: _Dividir_ (S), _Borrar izquierda_ (Q), _Borrar derecha_ (W) y _Eliminar_ (Supr). Arrastra los bordes de un clip para recortarlo y el clip entero para moverlo.
+3. **Subtítulos** (pestaña _Subtítulos_, a la derecha): elige un estilo rápido o ajusta fuente, tamaño, colores, contorno, sombra, palabras por bloque y mayúsculas.
+   - **Moverlos**: arrástralos en el propio vídeo. **Cambiar su texto**: doble clic sobre el subtítulo en el vídeo.
+   - **Resaltar la palabra mientras se dice**: se puede apagar, o cambiar el color.
+   - **Animación** de entrada y de salida: desvanecer, deslizar (izquierda, derecha, arriba, abajo), zoom, rebote, desenfoque, giro, máquina de escribir y caída de letras.
+   - **Usar mi guión**: pega lo que escribiste y se sincroniza con tu voz.
+4. **Textos** (pestaña _Texto_, a la izquierda): escribe el texto o pulsa **Dictar** para decirlo con el micrófono, y _Añadir_. Con barras se crean varios bloques seguidos: `el lobo / enfurecido / está en el bosque` son tres. Cada bloque se arrastra en el vídeo, se estira por las esquinas, se gira con el asa redonda y en _Propiedades_ se elige su duración, fuente, color y forma (recto, arco, círculo, onda).
+5. **Audio** (pestaña _Audio_): importa música o pulsa **Grabar mi voz**. En la tarjeta de cada clip, _Separar voz y música_ permite quitar la música de fondo o la voz.
+6. **Transcripción** (pestaña _Transcripción_): es el texto de lo que se dice en el vídeo. Selecciona palabras y pulsa Supr para cortarlas del vídeo, usa _Muletillas_, _Tomas repetidas_ o _Limpiar todo_, y copia o descarga el texto (_Copiar_, _TXT_, _SRT_). Si el vídeo no está en español, elige ahí el idioma (o «Detectar») y vuelve a transcribir.
+7. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
 
-Colores del texto tachado: rojo = corte manual, naranja = muletilla, morado = toma repetida, gris = silencio.
+Los botones de la barra superior colocan el reproductor **en el centro** o **a la derecha**; arrastrando los bordes entre paneles cambias su tamaño (y el botón de la flecha circular lo restablece).
+
+Colores del texto tachado en la transcripción: rojo = corte manual, naranja = muletilla, morado = toma repetida, gris = silencio.
 
 ## Atajos de teclado
 
-| Tecla                       | Acción                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| Espacio                     | Reproducir / pausar                                                                  |
-| S                           | Dividir en el cursor: el B-roll, audio o subtítulo seleccionado, o el clip principal |
-| Supr / Retroceso            | Borrar la selección (palabras, fragmento, B-roll, audio o subtítulo)                 |
-| Ctrl + Z                    | Deshacer                                                                             |
-| Ctrl + Shift + Z / Ctrl + Y | Rehacer                                                                              |
-| ← / →                       | Fotograma anterior / siguiente (con Shift, un segundo)                               |
-| Inicio / Fin                | Principio / final                                                                    |
-| Ctrl + S                    | Guardar ahora                                                                        |
-| Esc                         | Quitar la selección                                                                  |
-| ?                           | Ayuda de atajos                                                                      |
+| Tecla                       | Acción                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| Espacio                     | Reproducir / pausar                                                             |
+| S                           | Dividir en el cursor (el elemento seleccionado o el clip principal)             |
+| Q                           | Borrar lo que queda a la izquierda del cursor                                   |
+| W                           | Borrar lo que queda a la derecha del cursor                                     |
+| Supr / Retroceso            | Eliminar la selección (palabras, clip, texto, superposición, audio o subtítulo) |
+| Ctrl + Z                    | Deshacer                                                                        |
+| Ctrl + Shift + Z / Ctrl + Y | Rehacer                                                                         |
+| ← / →                       | Fotograma anterior / siguiente (con Shift, un segundo)                          |
+| Inicio / Fin                | Principio / final                                                               |
+| Ctrl + S                    | Guardar ahora                                                                   |
+| Esc                         | Quitar la selección                                                             |
+| ?                           | Ayuda de atajos                                                                 |
 
 En Mac, Ctrl equivale a Cmd.
 
-## Carpeta de recursos (B-roll y música)
+## Carpeta de recursos (fotos, vídeos y música a mano)
 
-Por defecto es `./recursos` (cámbiala con `BROLL_DIR`). Copia ahí clips (`mp4`, `mov`…), imágenes (`jpg`, `png`, `webp`) y música (`mp3`, `wav`, `m4a`…) y pulsa el botón de recargar del panel; también puedes subirlos desde el propio panel. Se admiten subcarpetas.
+Por defecto es `./recursos` (cámbiala con `BROLL_DIR`). Copia ahí clips (`mp4`, `mov`…), imágenes (`jpg`, `png`, `webp`) y música (`mp3`, `wav`, `m4a`…) y pulsa el botón de recargar del panel; también puedes importarlos desde el propio panel. Se admiten subcarpetas.
 
 Las **sugerencias de B-roll** comparan las palabras clave de cada frase con el nombre de los archivos. Pon nombres descriptivos (`playa-atardecer.mp4`, `grafico-inflacion.png`) para que funcionen.
 
 ## El proyecto en JSON
 
-Cada proyecto se guarda en `storage/projects/<id>.json` unos segundos después de cada cambio. Desde el editor puedes descargarlo o importarlo (iconos de la barra superior). Estructura:
+Cada proyecto se guarda en `storage/projects/<id>.json` un segundo después de cada cambio. Desde el editor puedes descargarlo o importarlo (iconos de la barra superior). Estructura:
 
 ```jsonc
 {
@@ -162,7 +188,8 @@ Cada proyecto se guarda en `storage/projects/<id>.json` unos segundos después d
   "media": ["<id de cada medio usado>"],
   // Pista principal: cada clip es un rango del archivo original menos sus cortes (en segundos del original)
   "clips": [{ "id": "…", "mediaId": "…", "start": 0, "end": 23.7, "cuts": [{ "start": 1.36, "end": 1.62, "reason": "filler" }] }],
-  "broll": [{ "id": "…", "mediaId": "…", "start": 4.0, "duration": 3, "srcIn": 0 }],
+  // Superposiciones: posición (0–1) y tamaño opcionales; sin ellos cubren todo el encuadre
+  "broll": [{ "id": "…", "mediaId": "…", "start": 4.0, "duration": 3, "srcIn": 0, "x": 0.3, "y": 0.25, "scale": 0.6 }],
   "audio": [{ "id": "…", "mediaId": "…", "start": 0, "duration": 18.8, "srcIn": 0, "volume": 0.25, "fadeIn": 0.5, "fadeOut": 1 }],
   "subtitles": {
     "enabled": true,
@@ -173,14 +200,22 @@ Cada proyecto se guarda en `storage/projects/<id>.json` unos segundos después d
     "outlineColor": "#000000",
     "outlineWidth": 6,
     "shadow": 4,
+    "positionX": 50,
     "positionY": 72,
+    "highlight": true,
+    "animationIn": "none",
+    "animationOut": "none",
     "uppercase": true,
     "stripPunctuation": true,
     "wordsPerPage": 3,
     "maxCharsPerLine": 16,
     "activeScale": 1,
   },
-  // Correcciones por palabra: texto, ocultar en subtítulos o forzar un bloque nuevo
+  // Textos manuales: posición (0–1), tamaño, giro y forma ("none", "arc" o "wave")
+  "texts": [
+    { "id": "…", "text": "el lobo", "start": 0, "duration": 1.5, "x": 0.5, "y": 0.4, "scale": 1, "rotation": 0, "curve": "arc", "curveAmount": 100 },
+  ],
+  // Cambios por palabra en los subtítulos: texto, ocultar o forzar un bloque nuevo
   "words": { "<mediaId>:<wordId>": { "text": "corregido", "hidden": false, "breakBefore": true } },
 }
 ```
@@ -198,22 +233,30 @@ src/
     edit.ts            Operaciones de edición (cortar/restaurar palabras, dividir, recortar, mover)
     cleanup.ts         Silencios, muletillas y tomas repetidas
     subtitles.ts       Bloques de subtítulos y palabra activa
+    subtitle-anim.ts   Animaciones de los subtítulos (mismas fórmulas en vista previa y exportación)
     ass.ts             Generación del subtítulo ASS para FFmpeg
-  lib/server/          FFmpeg, cola de trabajos, almacén de medios, transcripción, exportación
+    text-curve.ts      Texto en arco, círculo u onda; tamaño de las superposiciones
+    script.ts          Sincronización del guión con la voz
+  lib/server/          FFmpeg, cola de trabajos, almacén de medios, transcripción, separación, exportación
   lib/client/          Store con deshacer (zustand), motor de reproducción, acciones y atajos
+worker/                Separación de voz y música (onnxruntime) en un proceso aparte
+scripts/start.mjs      Lanzador con actualización automática
 ```
 
 - **Cola de trabajos**: la ingesta (miniatura, análisis de audio, proxy de vista previa), la transcripción y la exportación son trabajos en una cola del servidor con límite de concurrencia. El trabajo pesado se hace en procesos hijos (FFmpeg, whisper.cpp), así que ni el servidor ni la interfaz se bloquean; el navegador consulta el progreso y lo muestra en barras. Si el servidor se reinicia a mitad, el trabajo se relanza solo.
 - **Vista previa**: cada clip tiene dos elementos `<video>` que se alternan; mientras uno reproduce un fragmento, el otro ya está colocado al inicio del siguiente, de modo que saltar un corte es solo cambiar cuál se ve. Los clips que el navegador no reproduce bien (HEVC de iPhone, ProRes, 4K, 10 bits) reciben un proxy H.264 ligero; la exportación usa siempre el original.
 - **Exportación exacta**: los cortes se ajustan a la rejilla de 30 fps. Cada clip entra una vez en FFmpeg y vídeo y audio se filtran con la misma expresión `select`/`aselect` sobre una rejilla común de 1/30 s, así que los cortes son exactos al fotograma y el audio no se desincroniza aunque haya cientos de cortes.
 - **Subtítulos idénticos**: la vista previa y libass usan los mismos TTF (`public/fonts`). El tamaño se convierte con las métricas reales de cada fuente (libass dimensiona como GDI), y la posición y los saltos de línea se calculan con el mismo código en los dos lados.
+- **Textos manuales**: el navegador los dibuja en un lienzo (con su curva, giro y contorno) y esa misma imagen es la que se superpone en el MP4, así que salen idénticos.
+- **Animaciones**: la vista previa y el archivo ASS calculan cada animación con las mismas fórmulas y duraciones.
 - **Silencios**: se combinan el análisis de volumen del audio (umbral adaptativo al ruido de fondo de cada clip) y los huecos entre palabras de la transcripción, dejando un pequeño margen junto a la voz (ajustable).
 
 ## Scripts
 
 | Comando                       | Qué hace                                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                 | Servidor de desarrollo en <http://localhost:3000>                                                         |
+| `npm run app`                 | Abre la app y la mantiene actualizada (lo mismo que `Verticut.bat`)                                       |
+| `npm run dev`                 | Servidor de desarrollo en <http://localhost:3000>, sin actualizaciones                                    |
 | `npm run build` / `npm start` | Compilación y servidor de producción                                                                      |
 | `npm test`                    | Tests unitarios y un test de integración que renderiza un MP4 real con FFmpeg (se omite si no hay FFmpeg) |
 | `npm run typecheck`           | Comprobación de tipos                                                                                     |
@@ -240,7 +283,10 @@ Todas están documentadas en [`.env.example`](.env.example). Las principales:
 
 ## Solución de problemas
 
-- **«No se encuentra el ejecutable ffprobe»**: falta FFmpeg. En Windows, `winget install Gyan.FFmpeg`, cierra todas las terminales (y VS Code) y vuelve a lanzar `npm run dev` en una nueva.
+- **«No se encuentra el ejecutable ffprobe»**: falta FFmpeg. En Windows, `winget install Gyan.FFmpeg`, cierra la app y vuelve a abrirla.
+- **La app no se actualiza**: la ventana de `Verticut.bat` dice por qué (sin conexión, falta Git o has modificado archivos del programa). La fecha de la versión instalada está abajo en la pantalla de inicio.
+- **El texto transcrito no tiene sentido**: el idioma no coincide con el del vídeo. Cámbialo en la pestaña _Transcripción_ (o elige «Detectar») y vuelve a transcribir.
+- **Dictar o grabar no funciona**: el navegador tiene que tener permiso para usar el micrófono; para dictar hace falta además la transcripción local instalada.
 - **«Instalar transcripción» en la barra superior**: falta la transcripción local. Púlsalo e instálala; mientras, puedes editar y quitar silencios igualmente.
 - **La descarga del modelo falla**: comprueba la conexión y vuelve a pulsar Instalar; lo ya descargado se reutiliza.
 - **Error de «Visual C++ Redistributable» (Windows)**: instálalo desde <https://aka.ms/vs/17/release/vc_redist.x64.exe>.
@@ -251,4 +297,4 @@ Todas están documentadas en [`.env.example`](.env.example). Las principales:
 
 ## Licencias de las fuentes
 
-Las fuentes de `public/fonts` son de Google Fonts: Montserrat, Poppins, Inter, Archivo Black, Anton y Bebas Neue (SIL Open Font License 1.1) y Luckiest Guy (Apache 2.0). Sus licencias están en `public/fonts/licenses/`.
+Las fuentes de `public/fonts` son libres (Google Fonts). Con SIL Open Font License 1.1: Montserrat, Poppins, Inter, Archivo, Archivo Black, Arimo, Tinos, Roboto, Open Sans, Oswald, Anton, Bebas Neue, Playfair Display, Lora, Courier Prime, Pacifico, Dancing Script, Lobster, Bangers y Comic Neue. Con Apache 2.0: Luckiest Guy y Permanent Marker. Arimo y Tinos tienen las mismas medidas que Arial y Times New Roman. Las licencias están en `public/fonts/licenses/`.

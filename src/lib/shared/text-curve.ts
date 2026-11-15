@@ -44,10 +44,21 @@ export function layoutCurve(advances: number[], curve: 'arc' | 'wave', amount: n
 }
 
 /** Size of an overlay that covers the 1080x1920 frame while keeping the media's aspect ratio. */
-export function overlayRect(mediaWidth: number, mediaHeight: number, frameW: number, frameH: number, x = 0.5, y = 0.5, scale = 1) {
+export function overlayRect(
+  mediaWidth: number,
+  mediaHeight: number,
+  frameW: number,
+  frameH: number,
+  x = 0.5,
+  y = 0.5,
+  scale = 1,
+  /** Height on its own (a stretched picture); and whether scale 1 fits inside the frame instead of covering it. */
+  scaleY = scale,
+  contain = false,
+) {
   const ar = mediaWidth > 0 && mediaHeight > 0 ? mediaWidth / mediaHeight : frameW / frameH;
-  const baseW = Math.max(frameW, frameH * ar);
+  const baseW = contain ? Math.min(frameW, frameH * ar) : Math.max(frameW, frameH * ar);
   const width = baseW * scale;
-  const height = (baseW / ar) * scale;
+  const height = (baseW / ar) * scaleY;
   return { width, height, left: x * frameW - width / 2, top: y * frameH - height / 2 };
 }

@@ -10,7 +10,7 @@ import { RotateCw } from 'lucide-react';
 import type { BrollItem, TextItem } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
-import { overlayRect } from '@/lib/shared/text-curve';
+import { pictureOf, pictureRect } from '@/lib/shared/picture';
 import { TEXT_LANES, byLayer } from '@/lib/shared/lanes';
 import { textPose } from '@/lib/shared/text-anim';
 import { selRefs, useEditor } from '@/lib/client/store';
@@ -42,7 +42,8 @@ export function useStageGestures() {
     const x0 = item.x ?? 0.5;
     const y0 = item.y ?? 0.5;
     const scale0 = item.scale ?? 1;
-    const rot0 = kind === 'text' ? target.item.rotation : 0;
+    const rot0 = item.rotation ?? 0;
+    const scaleY0 = kind === 'broll' ? target.item.scaleY : undefined;
     const cx = stage.left + x0 * stage.width;
     const cy = stage.top + y0 * stage.height;
     const dist0 = Math.hypot(e.clientX - cx, e.clientY - cy) || 1;
@@ -72,13 +73,15 @@ export function useStageGestures() {
         updateItem(kind, item.id, { x, y }, key);
       } else if (mode === 'scale') {
         const dist = Math.hypot(ev.clientX - cx, ev.clientY - cy);
-        updateItem(kind, item.id, { scale: clamp((scale0 * dist) / dist0, 0.05, 8) }, key);
+        const scale = clamp((scale0 * dist) / dist0, 0.05, 8);
+        // A stretched overlay keeps its proportions while it is resized.
+        updateItem(kind, item.id, scaleY0 === undefined ? { scale } : { scale, scaleY: clamp((scaleY0 * scale) / scale0, 0.05, 8) }, key);
       } else {
         let deg = rot0 + ((Math.atan2(ev.clientY - cy, ev.clientX - cx) - angle0) * 180) / Math.PI;
         deg = ((((deg + 180) % 360) + 360) % 360) - 180;
         const nearest = Math.round(deg / 45) * 45;
         if (Math.abs(deg - nearest) < 4) deg = nearest;
-        updateItem('text', item.id, { rotation: Math.round(deg) }, key);
+        updateItem(kind, item.id, { rotation: Math.round(deg) }, key);
       }
     };
     const up = () => {
@@ -185,6 +188,7 @@ export function StageItems({
       .filter((t) => multiTexts.has(t.id) && visible.has(t.id) && sizes[t.id])
       .map((t) => ({
         id: t.id,
+        rotation: 0,
         left: t.x * OUTPUT_WIDTH - sizes[t.id].width / 2,
         top: t.y * OUTPUT_HEIGHT - sizes[t.id].height / 2,
         width: sizes[t.id].width,
@@ -194,7 +198,8 @@ export function StageItems({
       .filter((b) => shownOverlays.split(',').includes(b.id))
       .map((b) => ({
         id: b.id,
-        ...overlayRect(media[b.mediaId]?.width ?? 0, media[b.mediaId]?.height ?? 0, OUTPUT_WIDTH, OUTPUT_HEIGHT, b.x, b.y, b.scale),
+        rotation: b.rotation ?? 0,
+        ...pictureRect(media[b.mediaId]?.width ?? 0, media[b.mediaId]?.height ?? 0, pictureOf(b)),
       })),
   ];
 
@@ -202,7 +207,7 @@ export function StageItems({
   const selOverlay = selection?.kind === 'broll' ? broll.find((b) => b.id === selection.id) : undefined;
   const overlayShown = usePlayback((s) => !!selOverlay && s.time >= selOverlay.start - 1e-3 && s.time < selOverlay.start + selOverlay.duration);
 
-  let box: { left: number; top: number; width: number; height: number; target: Target } | null = null;
+  let box: { left: number; top: number; width: number; height: number; rotation?: number; target: Target } | null = null;
   if (selText && visible.has(selText.id) && sizes[selText.id]) {
     const { width, height } = sizes[selText.id];
     box = {
@@ -215,7 +220,8 @@ export function StageItems({
   } else if (selOverlay && overlayShown) {
     const m = media[selOverlay.mediaId];
     box = {
-      ...overlayRect(m?.width ?? 0, m?.height ?? 0, OUTPUT_WIDTH, OUTPUT_HEIGHT, selOverlay.x, selOverlay.y, selOverlay.scale),
+      ...pictureRect(m?.width ?? 0, m?.height ?? 0, pictureOf(selOverlay)),
+      rotation: selOverlay.rotation ?? 0,
       target: { kind: 'broll', item: selOverlay },
     };
   }
@@ -251,14 +257,30 @@ export function StageItems({
           key={o.id}
           data-group-outline={o.id}
           className="pointer-events-none absolute border-accent"
-          style={{ left: o.left, top: o.top, width: o.width, height: o.height, borderWidth: 2 * px, borderStyle: 'dashed' }}
+          style={{
+            left: o.left,
+            top: o.top,
+            width: o.width,
+            height: o.height,
+            transform: o.rotation ? `rotate(${o.rotation}deg)` : undefined,
+            borderWidth: 2 * px,
+            borderStyle: 'dashed',
+          }}
         />
       ))}
       {box && (
         <div
           data-selection-box
           className="pointer-events-none absolute border-accent"
-          style={{ left: box.left, top: box.top, width: box.width, height: box.height, borderWidth: 2 * px, borderStyle: 'solid' }}
+          style={{
+            left: box.left,
+            top: box.top,
+            width: box.width,
+            height: box.height,
+            transform: box.rotation ? `rotate(${box.rotation}deg)` : undefined,
+            borderWidth: 2 * px,
+            borderStyle: 'solid',
+          }}
         >
           {(
             [
@@ -276,17 +298,15 @@ export function StageItems({
               style={{ [h]: offset[h], [v]: offset[v], width: handle, height: handle, cursor, borderWidth: px, borderStyle: 'solid' }}
             />
           ))}
-          {box.target.kind === 'text' && (
-            <div
-              data-handle="rotate"
-              onPointerDown={(e) => begin(e, 'rotate', box.target)}
-              className="pointer-events-auto absolute flex cursor-grab items-center justify-center rounded-full bg-accent text-black"
-              style={{ left: '50%', top: box.top > 40 * px ? -34 * px : 10 * px, width: 22 * px, height: 22 * px, marginLeft: -11 * px }}
-              title="Girar"
-            >
-              <RotateCw size={13 * px} />
-            </div>
-          )}
+          <div
+            data-handle="rotate"
+            onPointerDown={(e) => begin(e, 'rotate', box.target)}
+            className="pointer-events-auto absolute flex cursor-grab items-center justify-center rounded-full bg-accent text-black"
+            style={{ left: '50%', top: box.top > 40 * px ? -34 * px : 10 * px, width: 22 * px, height: 22 * px, marginLeft: -11 * px }}
+            title="Girar"
+          >
+            <RotateCw size={13 * px} />
+          </div>
         </div>
       )}
     </>

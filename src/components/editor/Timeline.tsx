@@ -12,7 +12,7 @@ import { mediaUrl } from '@/lib/client/api';
 import { refKey, selRefs, selectionOf, toggleRef, useEditor, type SelRef, type Selection } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
 import { player, usePlayback } from '@/lib/client/player';
-import { formatTime, mediaHue } from '@/lib/client/format';
+import { formatTime } from '@/lib/client/format';
 import {
   addAudio,
   addBroll,
@@ -32,7 +32,9 @@ import {
 import { IconButton, Slider } from '@/components/ui';
 import { MEDIA_DRAG_TYPE } from './ToolsPanel';
 
-const H = { toolbar: 40, ruler: 24, text: 30, broll: 44, main: 62, audio: 40 };
+const H = { toolbar: 40, ruler: 24, text: 30, broll: 44, main: 84, audio: 40 };
+/** Parts of a clip of the main track: the strip with its name, the frames and the sound. */
+const CLIP = { name: 16, frames: 40, sound: 16 };
 type TrackId = 'text' | 'broll' | 'main' | 'audio';
 const TRACK_ORDER: TrackId[] = ['text', 'broll', 'main', 'audio'];
 /**
@@ -141,8 +143,8 @@ function Playhead({ pps, scroller }: { pps: number; scroller: React.RefObject<HT
   }, [x, playing, scroller]);
   return (
     <div className="pointer-events-none absolute top-0 bottom-0 z-20" style={{ transform: `translateX(${x}px)` }}>
-      <div className="absolute top-0 -left-[6px] h-3 w-3 rotate-45 rounded-[2px] bg-accent" />
-      <div className="absolute top-0 bottom-0 left-0 w-px bg-accent" />
+      <div className="absolute top-0 -left-[5px] h-3.5 w-[11px] rounded-[3px] rounded-b-[6px] bg-white shadow" />
+      <div className="absolute top-0 bottom-0 left-0 w-px bg-white" />
     </div>
   );
 }
@@ -153,6 +155,7 @@ function TrackLabel({
   height,
   layers = 1,
   plain,
+  main,
 }: {
   icon: typeof Film;
   label: string;
@@ -160,9 +163,18 @@ function TrackLabel({
   layers?: number;
   /** No line underneath: the next label belongs to the same track. */
   plain?: boolean;
+  /** The row of the main track is a little lighter. */
+  main?: boolean;
 }) {
   return (
-    <div className={clsx('flex items-center gap-1.5 px-3 text-[11px] font-medium text-muted', !plain && 'border-b border-line')} style={{ height }}>
+    <div
+      className={clsx(
+        'flex items-center gap-1.5 px-3 text-[11px] font-medium text-muted',
+        !plain && 'border-b border-black/25',
+        main && 'bg-tl-main',
+      )}
+      style={{ height }}
+    >
       <Icon size={12} className="shrink-0" /> <span className="truncate">{label}</span>
       {layers > 1 && (
         <span className="ml-auto shrink-0 rounded bg-panel-3 px-1 text-[10px] text-faint" title={`${layers} capas a la vez`}>
@@ -582,14 +594,14 @@ export function Timeline({ height }: { height: number }) {
     <div
       data-track={track}
       data-rows={lanes[track].count}
-      className={clsx('relative border-b border-line', dropTrack === track && 'bg-accent/10')}
+      className={clsx('relative border-b border-black/25', dropTrack === track && 'bg-accent/10')}
       style={{ height: rowHeight[track] }}
       onPointerDown={onEmptyDown}
       {...extra}
     >
       {/* Faint lines between layers, and the row an item is being dragged to. */}
       {Array.from({ length: rowsOf(track) - 1 }, (_, i) => (
-        <div key={i} className="pointer-events-none absolute inset-x-0 border-t border-line/60" style={{ top: (i + 1) * H[track] }} />
+        <div key={i} className="pointer-events-none absolute inset-x-0 border-t border-black/15" style={{ top: (i + 1) * H[track] }} />
       ))}
       {drag?.kind === 'item-move' &&
         drag.track === track &&
@@ -627,8 +639,8 @@ export function Timeline({ height }: { height: number }) {
   );
 
   return (
-    <section data-timeline className="flex shrink-0 flex-col bg-panel select-none" style={{ height }}>
-      <div className="flex shrink-0 items-center gap-1 border-b border-line px-2" style={{ height: H.toolbar }}>
+    <section data-timeline className="flex shrink-0 flex-col bg-tl select-none" style={{ height }}>
+      <div className="flex shrink-0 items-center gap-1 border-b border-black/30 bg-panel px-2" style={{ height: H.toolbar }}>
         <IconButton label="Dividir en el cursor (S)" onClick={splitAtPlayhead}>
           <Scissors size={15} />
         </IconButton>
@@ -661,25 +673,25 @@ export function Timeline({ height }: { height: number }) {
         </IconButton>
       </div>
       <div className="flex min-h-0 flex-1 overflow-y-auto">
-        <div className="w-32 shrink-0 border-r border-line" style={{ minHeight: tracksHeight }}>
-          <div style={{ height: H.ruler }} className="border-b border-line" />
+        <div className="w-32 shrink-0 border-r border-black/30" style={{ minHeight: tracksHeight }}>
+          <div style={{ height: H.ruler }} className="border-b border-black/25 bg-panel" />
           {/* The text track: titles on the upper rows, the subtitles' row at the bottom. */}
           {rowsOf('text') > 1 && <TrackLabel icon={Type} label="Texto" height={H.text * (rowsOf('text') - 1)} layers={lanes.text.count - 1} plain />}
           <TrackLabel icon={Captions} label="Subtítulos" height={H.text} />
           <TrackLabel icon={Layers} label="Superposición" height={rowHeight.broll} layers={lanes.broll.count} />
-          <TrackLabel icon={Film} label="Vídeo" height={rowHeight.main} />
+          <TrackLabel icon={Film} label="Vídeo" height={rowHeight.main} main />
           <TrackLabel icon={Music} label="Audio" height={rowHeight.audio} layers={lanes.audio.count} />
         </div>
         <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ minHeight: tracksHeight + 12 }}>
           <div ref={content} className="relative" style={{ width, height: tracksHeight }}>
             <div
               data-ruler
-              className="relative cursor-ew-resize border-b border-line bg-panel-2"
+              className="relative cursor-ew-resize border-b border-black/25 bg-panel"
               style={{ height: H.ruler }}
               onPointerDown={onRulerDown}
             >
               {ticks.map((t) => (
-                <div key={t} className="absolute top-0 h-full border-l border-line-strong" style={{ left: t * pps }}>
+                <div key={t} className="absolute top-0 h-full border-l border-white/10" style={{ left: t * pps }}>
                   <span className="absolute top-1 left-1 font-mono text-[10px] text-faint">{formatTime(t, step < 1)}</span>
                 </div>
               ))}
@@ -715,7 +727,7 @@ export function Timeline({ height }: { height: number }) {
 
             <div
               data-track="main"
-              className={clsx('relative border-b border-line', dropTrack === 'main' && 'bg-accent/10')}
+              className={clsx('relative border-b border-black/25 bg-tl-main', dropTrack === 'main' && 'bg-accent/10')}
               style={{ height: H.main }}
               onPointerDown={onEmptyDown}
               {...dropHandlers('main')}
@@ -743,64 +755,58 @@ export function Timeline({ height }: { height: number }) {
                     to += d;
                   }
                 }
-                const hue = mediaHue(seg.mediaId);
                 const thumb = m && mediaUrl.thumb(m);
+                const cw = Math.max(2, w - 1);
                 return (
                   <div
                     key={`${seg.clipId}-${seg.rangeIndex}`}
+                    data-clip={seg.clipId}
                     onPointerDown={(e) => onSegDown(e, seg)}
                     onPointerMove={(e) => {
                       if (!dragRef.current)
                         (e.currentTarget as HTMLElement).style.cursor = edgeOf(e, e.currentTarget as HTMLElement) ? TRIM_CURSOR : 'grab';
                     }}
                     className={clsx(
-                      'absolute top-1.5 bottom-1.5 overflow-hidden rounded-md border',
-                      selected ? 'z-10 border-accent ring-1 ring-accent' : 'border-black/40',
+                      'absolute top-1.5 bottom-1.5 overflow-hidden rounded-md border bg-clip',
+                      selected ? 'z-10 border-white ring-1 ring-white' : 'border-black/40',
                       active?.kind === 'seg-move' && active.moved && 'opacity-40',
                     )}
-                    style={{ left, width: Math.max(2, w - 1), background: `hsl(${hue} 38% 24%)` }}
+                    style={{ left, width: cw }}
                     title={m?.name}
                   >
-                    {/* The frames of the clip all along it; a photo is simply repeated. */}
-                    {m?.filmstrip ? (
-                      <FilmstripTiles
-                        media={m}
-                        from={from}
-                        to={to}
-                        width={Math.max(2, w - 1)}
-                        height={H.main - 14}
-                        viewFrom={Math.floor((view.left - left - 400) / 200) * 200}
-                        viewTo={Math.ceil((view.left + view.width - left + 400) / 200) * 200}
-                      />
-                    ) : (
-                      thumb && (
-                        <div
-                          className="pointer-events-none absolute inset-0"
-                          style={{
-                            backgroundImage: `url(${thumb})`,
-                            backgroundSize: 'auto 100%',
-                            backgroundRepeat: m?.kind === 'image' ? 'repeat-x' : 'no-repeat',
-                          }}
+                    {/* Name strip, the frames all along the clip (a photo is simply repeated) and the sound: as in CapCut. */}
+                    <div className="pointer-events-none absolute inset-x-0 overflow-hidden" style={{ top: CLIP.name, height: CLIP.frames }}>
+                      {m?.filmstrip ? (
+                        <FilmstripTiles
+                          media={m}
+                          from={from}
+                          to={to}
+                          width={cw}
+                          height={CLIP.frames}
+                          viewFrom={Math.floor((view.left - left - 400) / 200) * 200}
+                          viewTo={Math.ceil((view.left + view.width - left + 400) / 200) * 200}
                         />
-                      )
-                    )}
-                    {/* The sound, on a dark band under the frames. */}
-                    {m?.hasAudio && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[16px] bg-black/60" />}
-                    <Waveform
-                      env={envelopes[seg.mediaId]}
-                      from={from}
-                      to={to}
-                      width={Math.max(2, w - 1)}
-                      height={16}
-                      color="rgb(255 255 255 / 0.75)"
-                    />
-                    {w > 110 && (
-                      <span className="pointer-events-none absolute top-0.5 left-1 max-w-[70%] truncate rounded bg-black/55 px-1 text-[10px] font-medium text-white/90">
+                      ) : (
+                        thumb && (
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              backgroundImage: `url(${thumb})`,
+                              backgroundSize: 'auto 100%',
+                              backgroundRepeat: m?.kind === 'image' ? 'repeat-x' : 'no-repeat',
+                            }}
+                          />
+                        )
+                      )}
+                    </div>
+                    <Waveform env={envelopes[seg.mediaId]} from={from} to={to} width={cw} height={CLIP.sound} color="var(--color-clip-wave)" />
+                    {w > 60 && (
+                      <span className="pointer-events-none absolute top-px left-1 max-w-[75%] truncate rounded-[3px] bg-clip-chip px-1 text-[10px] leading-[14px] font-medium text-[#d0d5d6]">
                         {m?.name}
                       </span>
                     )}
                     {seg.speed !== 1 && w > 34 && (
-                      <span className="pointer-events-none absolute right-1 bottom-0.5 rounded bg-black/70 px-1 text-[9px] font-semibold text-accent">
+                      <span className="pointer-events-none absolute top-px right-1 rounded-[3px] bg-clip-chip px-1 text-[10px] leading-[14px] font-semibold text-white">
                         {Math.round(seg.speed * 100) / 100}×
                       </span>
                     )}
@@ -852,11 +858,11 @@ export function Timeline({ height }: { height: number }) {
   );
 }
 
+/** Colours of the blocks, taken from CapCut: brick red for texts and subtitles, teal for pictures, blue for sound. */
 const ITEM_STYLE: Record<ItemKind, string> = {
-  // Texts and subtitles are flat orange with white letters, as in CapCut.
-  text: 'bg-[#B8501F]',
-  broll: 'bg-track-broll/60',
-  audio: 'bg-track-audio/45',
+  text: 'bg-text-block',
+  broll: 'bg-clip',
+  audio: 'bg-audio-block',
 };
 
 /**
@@ -963,33 +969,39 @@ function ItemBlock({
       className={clsx(
         'absolute overflow-hidden rounded-md border',
         ITEM_STYLE[track],
-        selected ? (track === 'text' ? 'z-10 border-white ring-1 ring-white' : 'z-10 border-accent ring-1 ring-accent') : 'border-black/40',
+        selected ? 'z-10 border-white ring-1 ring-white' : 'border-black/30',
       )}
       style={{ left: start * pps, width: w, top: top + 4, height: H[track] - 8 }}
       title={label}
     >
       {track === 'broll' && thumb && (
         <div
-          className="pointer-events-none absolute inset-0 opacity-45"
+          className="pointer-events-none absolute inset-0 opacity-60"
           style={{ backgroundImage: `url(${thumb})`, backgroundSize: 'auto 100%', backgroundRepeat: 'repeat-x' }}
         />
       )}
-      {track === 'audio' && <Waveform env={env} from={srcIn} to={srcIn + duration} width={w} height={26} color="rgb(255 210 120 / 0.45)" />}
-      <span className="pointer-events-none absolute top-0.5 left-1.5 truncate pr-2 text-[10px] font-medium whitespace-nowrap text-white/90">
+      {track === 'audio' && <Waveform env={env} from={srcIn} to={srcIn + duration} width={w} height={26} color="var(--color-audio-wave)" />}
+      <span
+        className={clsx(
+          'pointer-events-none absolute top-[3px] left-1 max-w-[calc(100%-6px)] truncate rounded-[3px] px-1 text-[10px] leading-[14px] font-medium whitespace-nowrap text-white',
+          track === 'text' ? 'bg-text-chip' : track === 'broll' ? 'bg-clip-chip' : 'bg-black/30',
+          w < 14 && 'hidden',
+        )}
+      >
         {label}
         {'volume' in item && ` · ${Math.round(item.volume * 100)}%`}
       </span>
-      {selected && w > 20 && <Grips color={track === 'text' ? 'bg-white' : 'bg-accent'} />}
+      {selected && w > 20 && <Grips />}
     </div>
   );
 }
 
 /** The grips on both edges of a selected element, where it is stretched. */
-function Grips({ color = 'bg-accent' }: { color?: string }) {
+function Grips() {
   return (
     <>
-      <span className={clsx('pointer-events-none absolute inset-y-0 left-0 w-[4px]', color)} />
-      <span className={clsx('pointer-events-none absolute inset-y-0 right-0 w-[4px]', color)} />
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-[4px] bg-white" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-[4px] bg-white" />
     </>
   );
 }
@@ -1019,16 +1031,16 @@ function SubBlock({
         e.currentTarget.style.cursor = edgeAt(e.clientX, e.currentTarget.getBoundingClientRect()) ? TRIM_CURSOR : 'pointer';
       }}
       className={clsx(
-        'absolute top-1 bottom-1 overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-semibold whitespace-nowrap',
-        // Flat orange with white letters, as in CapCut.
-        selected ? 'z-10 border-white bg-[#F07A3A] text-white ring-1 ring-white' : 'border-black/30 bg-[#E0662D] text-white hover:bg-[#EA7035]',
+        'absolute top-1 bottom-1 overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-medium whitespace-nowrap text-white',
+        // The brick red of CapCut's text blocks, with white letters.
+        selected ? 'z-10 border-white bg-text-chip ring-1 ring-white' : 'border-black/30 bg-text-block hover:bg-text-chip',
         w < 8 && 'px-0',
       )}
       style={{ left: start * pps, width: w }}
       title={page.words.map((w) => w.text).join(' ')}
     >
       {page.words.map((w) => w.text).join(' ')}
-      {selected && w > 20 && <Grips color="bg-white" />}
+      {selected && w > 20 && <Grips />}
     </div>
   );
 }

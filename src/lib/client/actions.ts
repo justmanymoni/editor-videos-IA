@@ -5,7 +5,7 @@
  * undoable step.
  */
 import { nanoid } from 'nanoid';
-import type { AudioItem, BrollItem, MainClip, MediaInfo, ProjectDoc, TextItem, WordOverride } from '@/lib/shared/types';
+import type { AudioItem, BrollItem, MainClip, MediaInfo, PictureSettings, ProjectDoc, TextItem, WordOverride } from '@/lib/shared/types';
 import { DEFAULT_TEXT, MAX_SPEED, MIN_SPEED, OUTPUT_HEIGHT, OUTPUT_WIDTH, wordKey } from '@/lib/shared/types';
 import { FRAME, quantize } from '@/lib/shared/ranges';
 import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTimeline, timelineToSource, wordsInClip } from '@/lib/shared/timeline';
@@ -469,6 +469,51 @@ export function moveSegment(clipId: string, rangeIndex: number, dropTime: number
 }
 
 export type ItemPatch = Partial<BrollItem & AudioItem & TextItem>;
+
+/** The settings of the "Vídeo" tab, to copy them from one clip to others. */
+const PICTURE_KEYS: (keyof PictureSettings)[] = [
+  'x',
+  'y',
+  'scale',
+  'scaleY',
+  'rotation',
+  'opacity',
+  'blend',
+  'stabilize',
+  'enhance',
+  'denoise',
+  'opticalFlow',
+  'upscale',
+];
+
+/** Changes picture settings of clips of the main track ("Vídeo" tab). A value of undefined puts that setting back as it comes. */
+export function updateClips(ids: string[], patch: PictureSettings, coalesceKey?: string) {
+  if (!ids.length) return;
+  ed().commit((d) => {
+    for (const clip of d.clips) {
+      if (!ids.includes(clip.id)) continue;
+      for (const key of PICTURE_KEYS) {
+        if (!(key in patch)) continue;
+        if (patch[key] === undefined) delete clip[key];
+        else Object.assign(clip, { [key]: patch[key] });
+      }
+    }
+  }, coalesceKey);
+}
+
+/** Gives every clip of the main track the picture settings of one of them. */
+export function applyPictureToAllClips(clipId: string) {
+  const s = ed();
+  const from = s.doc?.clips.find((c) => c.id === clipId);
+  if (!from || !s.doc) return;
+  const patch: PictureSettings = {};
+  for (const key of PICTURE_KEYS) Object.assign(patch, { [key]: from[key] });
+  updateClips(
+    s.doc.clips.map((c) => c.id),
+    patch,
+  );
+  s.toast(`Ajustes de vídeo aplicados a los ${s.doc.clips.length} clips`, 'success');
+}
 
 export function updateItem(kind: ItemKind, id: string, patch: ItemPatch, coalesceKey?: string) {
   updateItems([{ kind, id, patch }], coalesceKey);

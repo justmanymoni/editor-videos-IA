@@ -158,6 +158,22 @@ export function ffmpegVersion(): Promise<string | null> {
   return versionCache;
 }
 
+let filtersCache: Promise<Set<string>> | null = null;
+
+/** Whether this FFmpeg build has a filter (some, like the two-pass stabiliser, are optional). */
+export async function ffmpegHasFilter(name: string): Promise<boolean> {
+  filtersCache ??= (async () => {
+    let out = '';
+    try {
+      await run(config.ffmpeg, ['-hide_banner', '-filters'], { onStdoutData: (c) => (out += c.toString('utf8')) });
+    } catch {
+      filtersCache = null;
+    }
+    return new Set(out.split('\n').map((l) => l.trim().split(/\s+/)[1] ?? ''));
+  })();
+  return (await filtersCache).has(name);
+}
+
 /** True when ffprobe can be executed (not cached: it may be installed while the app runs). */
 export async function ffprobeAvailable(): Promise<boolean> {
   try {

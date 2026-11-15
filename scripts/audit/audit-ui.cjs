@@ -719,12 +719,44 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       .click({ position: { x: 12, y: 10 } });
     await page.waitForTimeout(200);
     const O = (k) => () => D(`d.broll[0].${k}`);
-    await check('Superposición', 'tamaño', () => setSlider(right, 'Tamaño', 0.3), [O('scale'), ovSig]);
-    await check('Superposición', 'posición horizontal', () => setSlider(right, 'Horizontal', 0.7), [O('x'), ovSig]);
-    await check('Superposición', 'posición vertical', () => setSlider(right, 'Vertical', 0.3), [O('y'), ovSig]);
-    await check('Superposición', 'centrar a lo ancho', () => right.getByRole('button', { name: 'Ancho' }).click(), [O('x'), ovSig]);
-    await check('Superposición', 'centrar a lo alto', () => right.getByRole('button', { name: 'Alto' }).click(), [O('y'), ovSig]);
-    await check('Superposición', 'pantalla completa', () => right.getByRole('button', { name: 'Pantalla completa' }).click(), [O('scale'), ovSig]);
+    const pos = (axis) => right.locator(`input[type=number][aria-label="Posición ${axis}"]`);
+    const ovLook = () =>
+      page.evaluate(() => {
+        const o = document.querySelector('[data-overlay]');
+        return o ? [o.style.transform, getComputedStyle(o).mixBlendMode, o.style.filter].join('|') : 'no overlay';
+      });
+    await check('Superposición', 'escala', () => setSlider(right, 'Escala', 0.06), [O('scale'), ovSig]);
+    await check('Superposición', 'escala no uniforme', () => toggle(right, 'Escala uniforme'), O('scaleY'));
+    await check('Superposición', 'alto', () => setSlider(right, 'Alto', 0.12), [O('scaleY'), ovSig]);
+    await check('Superposición', 'escala uniforme', () => toggle(right, 'Escala uniforme'), [O('scaleY'), ovSig]);
+    await check('Superposición', 'posición X', () => pos('X').fill('150'), [O('x'), ovSig]);
+    await check('Superposición', 'posición Y', () => pos('Y').fill('-200'), [O('y'), ovSig]);
+    await check('Superposición', 'girar', () => setSlider(right, 'Girar', 0.6), [O('rotation'), ovLook]);
+    for (const [label, axis] of [
+      ['Alinear a la izquierda', 'x'],
+      ['Centrar a lo ancho', 'x'],
+      ['Alinear a la derecha', 'x'],
+      ['Alinear arriba', 'y'],
+      ['Centrar a lo alto', 'y'],
+      ['Alinear abajo', 'y'],
+    ]) {
+      await check('Superposición', label.toLowerCase(), () => mini(right, label), [O(axis), ovSig]);
+    }
+    await check('Superposición', 'modo de mezcla', () => right.locator('select[aria-label="Modo de mezcla"]').selectOption('multiply'), [
+      O('blend'),
+      ovLook,
+    ]);
+    await check('Superposición', 'opacidad', () => setSlider(right, 'Opacidad', 0.5), [O('opacity'), ovSig]);
+    await check('Superposición', 'restablecer mezcla', () => button(right, 'Restablecer mezcla'), [O('opacity'), O('blend'), ovSig, ovLook]);
+    await check('Superposición', 'mejorar la calidad', () => checkbox(right, 'Mejorar la calidad'), [O('enhance'), ovLook]);
+    await check('Superposición', 'mejorar la calidad: intensidad', () => setSlider(sectionOf(right, 'Mejorar la calidad'), 'Intensidad', 0.9), [
+      O('enhance'),
+      ovLook,
+    ]);
+    await check('Superposición', 'mejorar la calidad (quitar)', () => checkbox(right, 'Mejorar la calidad'), [O('enhance'), ovLook]);
+    await check('Superposición', 'ampliación', () => checkbox(right, 'Ampliación'), O('upscale'));
+    await check('Superposición', 'ampliación (quitar)', () => checkbox(right, 'Ampliación'), O('upscale'));
+    await check('Superposición', 'restablecer transformación', () => button(right, 'Restablecer transformación'), [O('scale'), O('rotation'), ovSig]);
     await undo();
     await check(
       'Superposición',
@@ -767,6 +799,77 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       .nth(1)
       .click({ position: { x: 30, y: 20 } });
     await tab('video');
+    // The "Vídeo" tab of a clip of the main track: Transformación, Mezcla and the improvements.
+    const K = (k) => () => D(`d.clips.find((c) => c.id === s.selection.clipId)?.${k}`);
+    const deckSig = () =>
+      page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-deck]')].find((x) => x.style.opacity !== '0');
+        return el
+          ? [el.style.left, el.style.top, el.style.width, el.style.height, el.style.transform, el.style.opacity, el.style.filter].join('|')
+          : 'no deck';
+      });
+    await check('Vídeo', 'escala', () => setSlider(right, 'Escala', 0.1), [K('scale'), deckSig]);
+    await check('Vídeo', 'escala no uniforme', () => toggle(right, 'Escala uniforme'), K('scaleY'));
+    await check('Vídeo', 'ancho', () => setSlider(right, 'Ancho', 0.14), [K('scale'), deckSig]);
+    await check('Vídeo', 'alto', () => setSlider(right, 'Alto', 0.06), [K('scaleY'), deckSig]);
+    await check('Vídeo', 'escala uniforme', () => toggle(right, 'Escala uniforme'), [K('scaleY'), deckSig]);
+    await check('Vídeo', 'posición X', () => right.locator('input[type=number][aria-label="Posición X"]').fill('120'), [K('x'), deckSig]);
+    await check('Vídeo', 'posición Y', () => right.locator('input[type=number][aria-label="Posición Y"]').fill('-90'), [K('y'), deckSig]);
+    await check('Vídeo', 'girar', () => setSlider(right, 'Girar', 0.55), [K('rotation'), deckSig]);
+    for (const [label, axis] of [
+      ['Alinear a la izquierda', 'x'],
+      ['Centrar a lo ancho', 'x'],
+      ['Alinear a la derecha', 'x'],
+      ['Alinear arriba', 'y'],
+      ['Centrar a lo alto', 'y'],
+      ['Alinear abajo', 'y'],
+    ]) {
+      await check('Vídeo', label.toLowerCase(), () => mini(right, label), [K(axis), deckSig]);
+    }
+    await check('Vídeo', 'opacidad', () => setSlider(right, 'Opacidad', 0.4), [K('opacity'), deckSig]);
+    await check('Vídeo', 'restablecer mezcla', () => button(right, 'Restablecer mezcla'), [K('opacity'), deckSig]);
+    await check('Vídeo', 'restablecer transformación', () => button(right, 'Restablecer transformación'), [
+      K('scale'),
+      K('x'),
+      K('rotation'),
+      deckSig,
+    ]);
+    await check('Vídeo', 'estabilización', () => checkbox(right, 'Estabilización'), K('stabilize'));
+    await check('Vídeo', 'estabilización: más estable', () => button(sectionOf(right, 'Estabilización'), 'Más estable'), K('stabilize'));
+    await check('Vídeo', 'estabilización: recorte mínimo', () => button(sectionOf(right, 'Estabilización'), 'Recorte mínimo'), K('stabilize'));
+    await check('Vídeo', 'mejorar la calidad', () => checkbox(right, 'Mejorar la calidad'), [K('enhance'), deckSig]);
+    await check('Vídeo', 'mejorar la calidad: intensidad', () => setSlider(sectionOf(right, 'Mejorar la calidad'), 'Intensidad', 0.9), [
+      K('enhance'),
+      deckSig,
+    ]);
+    await check('Vídeo', 'reducir el ruido', () => checkbox(right, 'Reducir el ruido de la imagen'), K('denoise'));
+    await check(
+      'Vídeo',
+      'reducir el ruido: intensidad',
+      () => setSlider(sectionOf(right, 'Reducir el ruido de la imagen'), 'Intensidad', 0.2),
+      K('denoise'),
+    );
+    await check('Vídeo', 'flujo óptico', () => checkbox(right, 'Flujo óptico'), K('opticalFlow'));
+    await check('Vídeo', 'ampliación', () => checkbox(right, 'Ampliación'), K('upscale'));
+    await check(
+      'Vídeo',
+      'aplicar a todos los clips',
+      () => right.getByRole('button', { name: 'Aplicar a todos los clips' }).click(),
+      () => D('d.clips.map((c) => [c.enhance, c.stabilize, c.upscale])'),
+    );
+    for (const title of ['Estabilización', 'Mejorar la calidad', 'Reducir el ruido de la imagen', 'Flujo óptico', 'Ampliación']) {
+      await check(
+        'Vídeo',
+        `${title.toLowerCase()} (quitar)`,
+        () => checkbox(right, title),
+        () => D('d.clips.find((c) => c.id === s.selection.clipId)'),
+      );
+    }
+    await page.evaluate(() =>
+      window.__verticut.useEditor.getState().commit((d) => {
+        for (const c of d.clips) for (const k of ['stabilize', 'enhance', 'denoise', 'opticalFlow', 'upscale']) delete c[k];
+      }),
+    );
     await check(
       'Clip',
       'botón «Voz y música» lleva a Audio',

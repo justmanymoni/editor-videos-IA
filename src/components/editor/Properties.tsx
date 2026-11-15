@@ -1,8 +1,10 @@
 'use client';
-import { AlignCenterHorizontal, AlignCenterVertical, AudioLines, Maximize, Scissors, Sparkles, Trash2 } from 'lucide-react';
+import { AlignCenterHorizontal, AlignCenterVertical, AudioLines, CopyCheck, Scissors, Sparkles, Trash2 } from 'lucide-react';
 import type { AudioItem, BrollItem, MainClip, TextItem } from '@/lib/shared/types';
+import { clipSpeed } from '@/lib/shared/types';
 import { selRefs, useEditor, type SelRef } from '@/lib/client/store';
 import {
+  applyPictureToAllClips,
   deleteSelection,
   pickItems,
   setItemsDuration,
@@ -15,6 +17,7 @@ import {
 import { Button, CheckSection, ColorField, Row, Section, Segmented, SliderRow } from '@/components/ui';
 import { TranscriptStatus } from './ToolsPanel';
 import { FontPicker } from './FontPicker';
+import { PicturePanel } from './PicturePanel';
 import { DesignButtons, ShadowControls } from './SubtitleStylePanel';
 import { SHAPES, SHAPE_OPTIONS, type TextShape } from './TextTab';
 
@@ -218,38 +221,17 @@ function TextProps({ item }: { item: TextItem }) {
   );
 }
 
-function OverlayStyle({ items }: { items: BrollItem[] }) {
-  return (
-    <>
-      <SliderRow
-        label="Tamaño"
-        value={items[0].scale ?? 1}
-        min={0.05}
-        max={3}
-        step={0.01}
-        scale={100}
-        unit="%"
-        onChange={(v) => patchAll('broll', items, { scale: v }, 'scale')}
-      />
-      <Button size="sm" className="self-start" onClick={() => patchAll('broll', items, { x: 0.5, y: 0.5, scale: 1 })}>
-        <Maximize size={12} /> Pantalla completa
-      </Button>
-    </>
-  );
-}
-
 function OverlayProps({ item }: { item: BrollItem }) {
-  const name = useEditor((s) => s.media[item.mediaId]?.name);
+  const media = useEditor((s) => s.media[item.mediaId]);
   return (
     <>
       <Section title="Superposición">
-        <p className="truncate text-xs text-muted" title={name}>
-          {name}
+        <p className="truncate text-xs text-muted" title={media?.name}>
+          {media?.name}
         </p>
-        <OverlayStyle items={[item]} />
       </Section>
-      <Section title="Posición y tiempo">
-        <Position kind="broll" items={[item]} />
+      <PicturePanel kind="broll" ids={[item.id]} value={item} media={media} />
+      <Section title="Tiempo">
         <Timing kind="broll" item={item} />
         <DeleteButton label="Eliminar superposición" />
       </Section>
@@ -285,20 +267,37 @@ export function AudioProps({ item }: { item: AudioItem }) {
 
 function ClipProps({ clip }: { clip: MainClip }) {
   const media = useEditor((s) => s.media[clip.mediaId]);
+  const blur = useEditor((s) => s.doc?.settings.fitMode === 'blur');
+  const several = useEditor((s) => (s.doc?.clips.length ?? 0) > 1);
   if (!media) return null;
   return (
-    <Section title={media.kind === 'image' ? 'Foto' : 'Clip'}>
-      <p className="truncate text-xs text-muted" title={media.name}>
-        {media.name}
-      </p>
-      {media.kind === 'video' && <TranscriptStatus media={media} />}
-      {media.kind === 'video' && media.hasAudio && (
-        <Button size="sm" className="self-start" onClick={() => useEditor.getState().set({ inspectorTab: 'audio' })}>
-          <AudioLines size={12} /> Voz y música
-        </Button>
-      )}
-      <DeleteButton label="Eliminar este fragmento" />
-    </Section>
+    <>
+      <Section title={media.kind === 'image' ? 'Foto' : 'Clip'}>
+        <p className="truncate text-xs text-muted" title={media.name}>
+          {media.name}
+        </p>
+        {media.kind === 'video' && <TranscriptStatus media={media} />}
+      </Section>
+      <PicturePanel kind="clip" ids={[clip.id]} value={clip} media={media} contain={blur} slowed={clipSpeed(clip) < 1} />
+      <Section title="Más">
+        {several && (
+          <Button
+            size="sm"
+            className="self-start"
+            onClick={() => applyPictureToAllClips(clip.id)}
+            title="Copia estos ajustes de vídeo a todos los clips"
+          >
+            <CopyCheck size={12} /> Aplicar a todos los clips
+          </Button>
+        )}
+        {media.kind === 'video' && media.hasAudio && (
+          <Button size="sm" className="self-start" onClick={() => useEditor.getState().set({ inspectorTab: 'audio' })}>
+            <AudioLines size={12} /> Voz y música
+          </Button>
+        )}
+        <DeleteButton label="Eliminar este fragmento" />
+      </Section>
+    </>
   );
 }
 
@@ -311,6 +310,10 @@ function MultiProps({ refs }: { refs: SelRef[] }) {
   const texts = picked.filter((x) => x.kind === 'text').map((x) => x.item as TextItem);
   const overlays = picked.filter((x) => x.kind === 'broll').map((x) => x.item as BrollItem);
   const audios = picked.filter((x) => x.kind === 'audio').map((x) => x.item as AudioItem);
+  const media = useEditor((s) => s.media);
+  const blur = doc.settings.fitMode === 'blur';
+  const clipIds = new Set(refs.flatMap((r) => (r.kind === 'segment' ? [r.clipId] : [])));
+  const clips = doc.clips.filter((c) => clipIds.has(c.id));
   const summary = [
     count(texts.length, 'texto', 'textos'),
     count(refs.filter((r) => r.kind === 'subtitle').length, 'subtítulo', 'subtítulos'),
@@ -335,11 +338,28 @@ function MultiProps({ refs }: { refs: SelRef[] }) {
           </Section>
         </>
       )}
+      {clips.length > 0 && (
+        <>
+          <Section title={`Clips (${clips.length})`}>
+            <p className="text-[11px] text-faint">Los ajustes de vídeo se aplican a todos los clips seleccionados.</p>
+          </Section>
+          <PicturePanel
+            kind="clip"
+            ids={clips.map((c) => c.id)}
+            value={clips[0]}
+            media={media[clips[0].mediaId]}
+            contain={blur}
+            slowed={clipSpeed(clips[0]) < 1}
+          />
+        </>
+      )}
       {overlays.length > 0 && (
-        <Section title={`Superposiciones (${overlays.length})`}>
-          <OverlayStyle items={overlays} />
-          <Position kind="broll" items={overlays} />
-        </Section>
+        <>
+          <Section title={`Superposiciones (${overlays.length})`}>
+            <p className="text-[11px] text-faint">Los ajustes de vídeo se aplican a todas las superposiciones seleccionadas.</p>
+          </Section>
+          <PicturePanel kind="broll" ids={overlays.map((o) => o.id)} value={overlays[0]} media={media[overlays[0].mediaId]} />
+        </>
       )}
       {audios.length > 0 && (
         <Section title={`Audios (${audios.length})`}>

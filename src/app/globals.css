@@ -1,25 +1,32 @@
 @import 'tailwindcss';
 
+/* Neutral greys, text and clip colours taken from CapCut's editor; the accent is Verticut's own. */
 @theme {
   --color-accent: #ffe600;
   --color-accent-strong: #ffd400;
-  --color-bg: #0f0f10;
-  --color-panel: #19191b;
-  --color-panel-2: #222224;
-  --color-panel-3: #2d2d30;
-  --color-line: #2a2a2d;
-  --color-line-strong: #3b3b3f;
-  --color-fg: #e8e8ea;
-  --color-muted: #9a9aa0;
-  --color-faint: #68686e;
+  --color-bg: #141414;
+  --color-panel: #262626;
+  --color-panel-2: #2c2c2c;
+  --color-panel-3: #383838;
+  --color-line: #353535;
+  --color-line-strong: #4a4a4a;
+  --color-fg: #ececec;
+  --color-muted: #a3a3a3;
+  --color-faint: #767676;
   --color-danger: #ff5c5c;
   --color-cut-silence: #6b7280;
   --color-cut-filler: #ff9f43;
   --color-cut-retake: #b388ff;
-  --color-track-main: #2b6cb0;
-  --color-track-broll: #2f855a;
-  --color-track-audio: #b7791f;
-  --color-track-subs: #ffe600;
+  /* Timeline: rows, the row of the main track, and the blocks of each kind. */
+  --color-tl: #292929;
+  --color-tl-main: #303030;
+  --color-clip: #004d52;
+  --color-clip-chip: #1a5f64;
+  --color-clip-wave: #00777e;
+  --color-text-block: #9c4937;
+  --color-text-chip: #a65c4b;
+  --color-audio-block: #17395c;
+  --color-audio-wave: #3f86c5;
   --font-sans: 'Inter UI', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 

@@ -273,7 +273,7 @@ function Styles({ current }: { current: SubtitleStyle }) {
               data-subtitle-preset={p.id}
               onClick={() => apply(p.style)}
               onMouseUp={(e) => e.currentTarget.blur()}
-              className="rounded bg-[#333336] px-1 py-2 text-center hover:ring-1 hover:ring-accent"
+              className="rounded bg-[#3a3a3a] px-1 py-2 text-center hover:ring-1 hover:ring-accent"
             >
               <span
                 className="sub-text block text-[13px] leading-tight"

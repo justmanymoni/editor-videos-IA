@@ -13,7 +13,7 @@ import { TopBar } from './TopBar';
 import { ToolsPanel } from './ToolsPanel';
 import { PLAYER_CONTROLS, PLAYER_PADDING, Preview } from './Preview';
 import { InspectorPanel } from './InspectorPanel';
-import { useLayout } from '@/lib/client/layout';
+import { DEFAULT_LAYOUT, useLayout } from '@/lib/client/layout';
 import { clamp } from '@/lib/shared/ranges';
 import { Timeline } from './Timeline';
 import { ExportDialog } from './ExportDialog';
@@ -27,7 +27,7 @@ async function onTranscriberInstalled(status: ServerStatus) {
   s.toast('Transcripción local lista. Tus clips se están transcribiendo.', 'success');
 }
 
-const DIVIDER = 5;
+const DIVIDER = 4;
 const MIN_TOOLS = 250;
 const MIN_SIDE = 300;
 const MIN_PLAYER = 200;
@@ -66,8 +66,8 @@ function Divider({
       }}
       className={
         axis === 'x'
-          ? 'z-10 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-accent active:bg-accent'
-          : 'z-10 shrink-0 cursor-row-resize bg-line transition-colors hover:bg-accent active:bg-accent'
+          ? 'z-10 shrink-0 cursor-col-resize bg-bg transition-colors hover:bg-accent active:bg-accent'
+          : 'z-10 shrink-0 cursor-row-resize bg-bg transition-colors hover:bg-accent active:bg-accent'
       }
       style={axis === 'x' ? { width: DIVIDER } : { height: DIVIDER }}
     />
@@ -191,7 +191,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         onSave={saveNow}
         playerSide={layout.player}
         onPlayerSide={(player) => setLayout({ player })}
-        onResetLayout={() => setLayout({ toolsW: null, sideW: null, playerW: null, timelineH: 300 })}
+        onResetLayout={() => setLayout({ toolsW: null, sideW: null, playerW: null, timelineH: DEFAULT_LAYOUT.timelineH })}
       />
       <div ref={rowRef} className="flex min-h-0 flex-1">
         <div className="shrink-0" style={{ width: toolsW }}>
@@ -239,7 +239,7 @@ export default function Editor({ projectId }: { projectId: string }) {
         axis="y"
         start={() => -layout.timelineH}
         onChange={(v) => setLayout({ timelineH: clamp(-v, MIN_TIMELINE, window.innerHeight - 260) })}
-        onReset={() => setLayout({ timelineH: 300 })}
+        onReset={() => setLayout({ timelineH: DEFAULT_LAYOUT.timelineH })}
       />
       <Timeline height={layout.timelineH} />
       {dragOver && (

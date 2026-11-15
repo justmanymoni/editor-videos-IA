@@ -17,7 +17,9 @@ export interface Layout {
   timelineH: number;
 }
 
-export const DEFAULT_LAYOUT: Layout = { player: 'center', toolsW: null, sideW: null, playerW: null, timelineH: 300 };
+export const DEFAULT_LAYOUT: Layout = { player: 'center', toolsW: null, sideW: null, playerW: null, timelineH: 324 };
+/** Height the timeline had by default before the main track grew: whoever still has it gets the new one. */
+const OLD_TIMELINE_H = 300;
 const KEY = 'verticut.layout';
 /** Fired on `window` when the layout changes, so every user of the hook shows the same. */
 const CHANGED = 'verticut-layout';
@@ -28,7 +30,7 @@ export function useLayout() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Layout> | null;
-      if (saved) setLayout({ ...DEFAULT_LAYOUT, ...saved });
+      if (saved) setLayout({ ...DEFAULT_LAYOUT, ...saved, ...(saved.timelineH === OLD_TIMELINE_H && { timelineH: DEFAULT_LAYOUT.timelineH }) });
     } catch {
       // Ignore a corrupt preference.
     }

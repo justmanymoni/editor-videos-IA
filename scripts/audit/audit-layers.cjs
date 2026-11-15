@@ -170,12 +170,26 @@ const SHOTS = process.env.SHOTS;
         (await D(`d.texts.find(t => t.id === "${bottomText}").start`)) > startBefore,
     );
 
-    // ---- colours of subtitle blocks, fonts in alphabetical order
-    const sub = await page.evaluate(() => {
-      const cs = getComputedStyle(document.querySelector('[data-track=subs] > [data-sub]'));
-      return [cs.backgroundColor, cs.color];
+    // ---- the colours of the timeline are CapCut's; fonts in alphabetical order
+    const tones = await page.evaluate(() => {
+      const bg = (sel) => getComputedStyle(document.querySelector(sel)).backgroundColor;
+      return {
+        sub: bg('[data-track=subs] > [data-sub]'),
+        subText: getComputedStyle(document.querySelector('[data-track=subs] > [data-sub]')).color,
+        text: bg('[data-track=text] > [data-item]'),
+        clip: bg('[data-track=main] [data-clip]'),
+        overlay: bg('[data-track=broll] > [data-item]'),
+        rows: bg('[data-timeline]'),
+        main: bg('[data-track=main]'),
+      };
     });
-    ok('los subtítulos son naranja plano con letras blancas', sub[0] === 'rgb(224, 102, 45)' && sub[1] === 'rgb(255, 255, 255)', sub.join(' / '));
+    ok(
+      'subtítulos y textos en el rojo ladrillo de CapCut, con letras blancas',
+      tones.sub === 'rgb(156, 73, 55)' && tones.text === tones.sub && tones.subText === 'rgb(255, 255, 255)',
+      `${tones.sub} / ${tones.subText}`,
+    );
+    ok('vídeos y superposiciones en verde azulado', tones.clip === 'rgb(0, 77, 82)' && tones.overlay === tones.clip, tones.clip);
+    ok('fondos grises de la referencia', tones.rows === 'rgb(41, 41, 41)' && tones.main === 'rgb(48, 48, 48)', `${tones.rows} / ${tones.main}`);
     await page.keyboard.press('Escape');
     await page.click('[data-inspector-tab=subtitles]');
     await page.locator('aside >> nth=1 >> button[aria-label="Fuente"]').click();

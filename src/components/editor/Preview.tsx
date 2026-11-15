@@ -5,11 +5,11 @@ import { Loader2, Pause, Play, SkipBack, SkipForward, Upload } from 'lucide-reac
 import type { AudioMix, MediaInfo } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { OVERLAY_LANES, byLayer } from '@/lib/shared/lanes';
-import { overlayRect } from '@/lib/shared/text-curve';
+import { blendMode, cssFilter, pictureOf, pictureRect } from '@/lib/shared/picture';
 import { mediaUrl } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
-import { deckKey, player, usePlayback } from '@/lib/client/player';
+import { deckKey, player, usePlayback, type DeckLook } from '@/lib/client/player';
 import { useKeyedRefs } from '@/lib/client/hooks';
 import { formatTime } from '@/lib/client/format';
 import { uploadClips } from '@/lib/client/actions';
@@ -67,6 +67,22 @@ export function Preview() {
   const overlayRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | HTMLImageElement | null) => player.registerOverlay(key, el), []));
   const audioRef = useKeyedRefs(useCallback((key: string, el: HTMLAudioElement | null) => player.registerAudio(key, el), []));
 
+  // Where each clip of the main track is drawn ("Vídeo" tab): the same rectangle, turn and opacity as the export.
+  useEffect(() => {
+    const looks: Record<string, DeckLook> = {};
+    for (const c of doc.clips) {
+      const m = media[c.mediaId];
+      const pic = pictureOf(c);
+      looks[c.id] = {
+        ...pictureRect(m?.width ?? 0, m?.height ?? 0, pic, blur),
+        rotation: pic.rotation,
+        opacity: pic.opacity,
+        filter: cssFilter(pic),
+      };
+    }
+    player.setLooks(looks);
+  }, [doc.clips, media, blur]);
+
   useEffect(() => {
     player.setTimeline(segs, doc.broll, doc.audio, doc.settings.mainVolume);
   }, [segs, doc.broll, doc.audio, doc.settings.mainVolume]);
@@ -86,10 +102,11 @@ export function Preview() {
 
   const mainMedia = [...new Set(doc.clips.map((c) => c.mediaId))].map((id) => media[id]).filter((m): m is MediaInfo => !!m);
   const preparing = mainMedia.find((m) => m.status === 'processing' && m.stage?.startsWith('Optimizando'));
-  const deckStyle = { objectFit: blur ? 'contain' : 'cover', opacity: 0 } as const;
+  // Hidden until the player shows them, placed where their clip goes.
+  const deckStyle = { left: 0, top: 0, width: '100%', height: '100%', objectFit: blur ? 'contain' : 'cover', opacity: 0 } as const;
 
   return (
-    <section className="flex h-full min-w-0 flex-col bg-[#060607]">
+    <section className="flex h-full min-w-0 flex-col bg-[#1c1c1c]">
       <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
         <div className="relative overflow-hidden rounded-md bg-black ring-1 ring-line" style={{ width: w, height: h }}>
           <div
@@ -112,7 +129,8 @@ export function Preview() {
                   ref={deckRef(deckKey(m.id, 0))}
                   src={`/api/media/${m.id}/file`}
                   alt=""
-                  className="absolute inset-0 h-full w-full"
+                  data-deck
+                  className="absolute max-w-none"
                   style={deckStyle}
                 />
               ) : (
@@ -123,7 +141,8 @@ export function Preview() {
                     src={(doc.audioMix[m.id] && mixUrls[m.id]) || mediaUrl.preview(m)}
                     preload="auto"
                     playsInline
-                    className="absolute inset-0 h-full w-full"
+                    data-deck
+                    className="absolute max-w-none"
                     style={deckStyle}
                   />
                 ))
@@ -133,14 +152,22 @@ export function Preview() {
             {byLayer(doc.broll, OVERLAY_LANES).map((b) => {
               const m = media[b.mediaId];
               if (!m) return null;
-              // Same geometry as the export: covers the frame at scale 1, free position and size otherwise.
-              const rect = overlayRect(m.width, m.height, OUTPUT_WIDTH, OUTPUT_HEIGHT, b.x, b.y, b.scale);
+              // Same geometry as the export: covers the frame at scale 1, free position, size and turn otherwise.
+              const pic = pictureOf(b);
+              const rect = pictureRect(m.width, m.height, pic);
               const props = {
                 ref: overlayRef(b.id),
                 'data-overlay': b.id,
                 onPointerDown: (e: React.PointerEvent) => begin(e, 'move', { kind: 'broll', item: b }),
                 className: 'absolute max-w-none cursor-move',
-                style: { ...rect, opacity: 0, pointerEvents: 'none' } as const,
+                style: {
+                  ...rect,
+                  transform: pic.rotation ? `rotate(${pic.rotation}deg)` : undefined,
+                  mixBlendMode: blendMode(pic.blend).css as React.CSSProperties['mixBlendMode'],
+                  filter: cssFilter(pic) || undefined,
+                  opacity: 0,
+                  pointerEvents: 'none',
+                } as const,
                 draggable: false,
               };
               return m.kind === 'image' ? (
@@ -174,7 +201,7 @@ export function Preview() {
         const m = media[a.mediaId];
         return m ? <audio key={a.id} ref={audioRef(a.id)} src={`/api/media/${m.id}/file`} preload="auto" /> : null;
       })}
-      <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-line px-2" style={{ height: PLAYER_CONTROLS }}>
+      <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-black/30 bg-panel px-2" style={{ height: PLAYER_CONTROLS }}>
         <IconButton label="Ir al principio (Inicio)" onClick={() => player.seek(0)}>
           <SkipBack size={15} />
         </IconButton>

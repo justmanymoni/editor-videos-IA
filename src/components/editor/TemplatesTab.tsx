@@ -59,7 +59,7 @@ function PresetThumb({ preset, playing }: { preset: TextPreset; playing: boolean
   }, [playing, fit, item]);
 
   return (
-    <span className="flex h-[86px] items-center justify-center overflow-hidden rounded-md bg-[#26262a]">
+    <span className="flex h-[86px] items-center justify-center overflow-hidden rounded-md bg-[#1c1c1c]">
       <canvas ref={canvas} style={{ width: size.width * fit, height: size.height * fit }} />
     </span>
   );

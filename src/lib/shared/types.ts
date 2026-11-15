@@ -100,8 +100,40 @@ export interface Cut extends Range {
   reason: CutReason;
 }
 
+/** How a picture is mixed with what is below it. */
+export type BlendMode = 'normal' | 'screen' | 'multiply' | 'overlay' | 'lighten' | 'darken' | 'hardlight' | 'difference';
+
+/**
+ * Settings of the "Vídeo" tab, shared by the clips of the main track and the
+ * overlays. All optional: when one is missing the picture is left as it is.
+ */
+export interface PictureSettings {
+  /** Centre as a fraction of the frame (default 0.5, 0.5). */
+  x?: number;
+  y?: number;
+  /** Size. 1 = fills the frame (or fits inside it, when the project uses the blurred background). */
+  scale?: number;
+  /** Height on its own, when the scale is not uniform (default: the same as `scale`). */
+  scaleY?: number;
+  /** Degrees, clockwise. */
+  rotation?: number;
+  /** 0 (invisible) to 1. */
+  opacity?: number;
+  blend?: BlendMode;
+  /** Stabilisation: 0 off, 1 least crop, 2 recommended, 3 most stable. */
+  stabilize?: number;
+  /** More contrast, colour and sharpness: 0 (off) to 1. */
+  enhance?: number;
+  /** Noise reduction: 0 (off) to 1. */
+  denoise?: number;
+  /** Smooth slow motion: the frames in between are worked out instead of repeated. */
+  opticalFlow?: boolean;
+  /** Sharper enlargement of pictures with little resolution. */
+  upscale?: boolean;
+}
+
 /** One instance of a source clip on the main track. Cuts are in source time. */
-export interface MainClip {
+export interface MainClip extends PictureSettings {
   id: string;
   mediaId: string;
   start: number;
@@ -118,8 +150,11 @@ export const MAX_SPEED = 4;
 /** Speed of a clip, within the supported range. */
 export const clipSpeed = (clip: Pick<MainClip, 'speed'>) => Math.min(MAX_SPEED, Math.max(MIN_SPEED, clip.speed || 1));
 
-/** B-roll overlay placed on the timeline. */
-export interface BrollItem {
+/**
+ * B-roll overlay placed on the timeline. At scale 1 it covers the whole frame;
+ * smaller values make a sticker / picture-in-picture.
+ */
+export interface BrollItem extends PictureSettings {
   id: string;
   mediaId: string;
   /** Timeline position. */
@@ -127,11 +162,6 @@ export interface BrollItem {
   duration: number;
   /** Offset inside the source (videos only). */
   srcIn: number;
-  /** Centre of the overlay as a fraction of the frame (default 0.5, 0.5). */
-  x?: number;
-  y?: number;
-  /** 1 = covers the whole frame; smaller values make a sticker / picture-in-picture. */
-  scale?: number;
   /** Row of the timeline it sits on: overlays on higher rows are drawn on top. */
   lane?: number;
 }

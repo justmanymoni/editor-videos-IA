@@ -18,7 +18,13 @@ export function InspectorPanel() {
   // Selecting an element shows its settings.
   useEffect(() => {
     const next: InspectorTab | null =
-      kind === 'text' || kind === 'broll' || kind === 'multi' ? 'video' : kind === 'audio' ? 'audio' : kind === 'subtitle' ? 'subtitles' : null;
+      kind === 'text' || kind === 'broll' || kind === 'multi' || kind === 'segment'
+        ? 'video'
+        : kind === 'audio'
+          ? 'audio'
+          : kind === 'subtitle'
+            ? 'subtitles'
+            : null;
     if (next) useEditor.getState().set({ inspectorTab: next });
   }, [kind, id]);
 

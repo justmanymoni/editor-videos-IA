@@ -18,10 +18,22 @@ import { buildPages, collectSubWords } from '../shared/subtitles';
 import { buildAss } from '../shared/ass';
 import { getFont } from '../shared/fonts';
 import { overlayRect } from '../shared/text-curve';
+import {
+  STABILIZE_LEVELS,
+  blendMode,
+  hasImprovements,
+  improveFilters,
+  isPlainPicture,
+  pictureOf,
+  pictureRect,
+  placePicture,
+  type Picture,
+  type Placement,
+} from '../shared/picture';
 import { textMotion } from '../shared/text-anim';
 import { OVERLAY_LANES, TEXT_LANES, byLayer } from '../shared/lanes';
 import { config } from './config';
-import { ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
+import { ffmpegHasFilter, ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
 import type { JobContext } from './jobs';
 import { getMedia, mediaPaths, readTranscript } from './media-store';
 
@@ -36,12 +48,30 @@ export interface PlanMedia {
   stems?: { voice: string; music: string };
 }
 
+/** A first pass over a clip that measures how the camera shakes (the render then compensates it). */
+export interface StabilizePass {
+  /** Input options and file. */
+  input: string[];
+  /** Filter chain that writes `file` (relative to the work folder). */
+  filter: string;
+  file: string;
+  /** Seconds of video it reads. */
+  duration: number;
+}
+
 export interface ExportPlan {
   inputs: string[][];
   filter: string;
   duration: number;
   ass: string | null;
   fontFile: string | null;
+  /** Passes to run, in the work folder, before the render. */
+  stabilize: StabilizePass[];
+}
+
+export interface PlanOptions {
+  /** FFmpeg has the two-pass stabiliser (vidstab); without it the simpler `deshake` filter is used. */
+  vidstab?: boolean;
 }
 
 /** A manual text rendered to a transparent PNG by the editor (file relative to the work folder). */
@@ -73,15 +103,53 @@ export function atempo(speed: number): string {
   return parts.join(',');
 }
 
-function fitChain(input: string, output: string, mode: ProjectDoc['settings']['fitMode'], k: number): string[] {
-  if (mode !== 'blur') {
-    return [`[${input}]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p[${output}]`];
+const BLUR_BG = `scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,scale=${W}:${H},lutyuv=y=val*0.8`;
+
+/**
+ * Filters that draw the visible part of a picture at its size, improved,
+ * turned and with its opacity, and where its centre goes when overlaid.
+ */
+function pictureChain(pic: Picture, place: Placement): { chain: string[]; x: string; y: string } {
+  const chain: string[] = [];
+  const { crop } = place;
+  if (!place.whole) chain.push(`crop=w='iw*${num(crop.w)}':h='ih*${num(crop.h)}':x='iw*${num(crop.x)}':y='ih*${num(crop.y)}'`);
+  chain.push(`scale=${even(place.width)}:${even(place.height)}${pic.upscale ? ':flags=lanczos' : ''}`, 'setsar=1', ...improveFilters(pic).finish);
+  if (pic.rotation) {
+    const a = num((pic.rotation * Math.PI) / 180);
+    chain.push('format=rgba', `rotate=${a}:ow='rotw(${a})':oh='roth(${a})':c=black@0`);
   }
+  if (pic.opacity < 1) chain.push('format=rgba', `colorchannelmixer=aa=${num(pic.opacity)}`);
+  return { chain, x: `'${num(place.cx)}-w/2'`, y: `'${num(place.cy)}-h/2'` };
+}
+
+/** Puts a clip of the main track on the 1080x1920 frame: covering it, or over its own blurred copy. */
+function fitChain(input: string, output: string, mode: ProjectDoc['settings']['fitMode'], k: number, pic: Picture, m: PlanMedia): string[] {
+  const blur = mode === 'blur';
+  const { finish } = improveFilters(pic);
+  const flags = pic.upscale ? ':flags=lanczos' : '';
+  const extra = finish.length ? `,${finish.join(',')}` : '';
+  if (isPlainPicture(pic)) {
+    if (!blur) {
+      return [`[${input}]scale=${W}:${H}:force_original_aspect_ratio=increase${flags},crop=${W}:${H}${extra},setsar=1,format=yuv420p[${output}]`];
+    }
+    return [
+      `[${input}]split=2[bg${k}][fg${k}]`,
+      `[bg${k}]${BLUR_BG}[bgb${k}]`,
+      `[fg${k}]scale=${W}:${H}:force_original_aspect_ratio=decrease${flags}${extra}[fgs${k}]`,
+      `[bgb${k}][fgs${k}]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[${output}]`,
+    ];
+  }
+  // Moved, resized, turned or see-through: its visible part is drawn over black (or over the blurred copy).
+  const place = placePicture(pictureRect(m.width ?? 0, m.height ?? 0, pic, blur), pic.rotation);
+  // The background has the frames of the clip itself, so both always have the same length.
+  const base = blur ? BLUR_BG : `scale=${W}:${H}:flags=neighbor,drawbox=c=black:t=fill`;
+  if (!place || pic.opacity <= 0) return [`[${input}]${base},setsar=1,format=yuv420p[${output}]`];
+  const { chain, x, y } = pictureChain(pic, place);
   return [
     `[${input}]split=2[bg${k}][fg${k}]`,
-    `[bg${k}]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=10:2,scale=${W}:${H},lutyuv=y=val*0.8[bgb${k}]`,
-    `[fg${k}]scale=${W}:${H}:force_original_aspect_ratio=decrease[fgs${k}]`,
-    `[bgb${k}][fgs${k}]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[${output}]`,
+    `[bg${k}]${base},setsar=1,format=yuv420p[bgb${k}]`,
+    `[fg${k}]${chain.join(',')}[fgs${k}]`,
+    `[bgb${k}][fgs${k}]overlay=x=${x}:y=${y},setsar=1,format=yuv420p[${output}]`,
   ];
 }
 
@@ -90,6 +158,7 @@ export function buildExportPlan(
   media: Map<string, PlanMedia>,
   transcripts: Record<string, Word[] | undefined>,
   textImages: TextImage[] = [],
+  options: PlanOptions = {},
 ): ExportPlan {
   const segs = buildSegments(doc.clips);
   const total = sequenceDuration(segs);
@@ -97,6 +166,7 @@ export function buildExportPlan(
 
   const inputs: string[][] = [];
   const filters: string[] = [];
+  const stabilize: StabilizePass[] = [];
   const need = (id: string) => {
     const m = media.get(id);
     if (!m) throw new Error(`Falta el archivo de un medio del proyecto (${id}).`);
@@ -116,17 +186,39 @@ export function buildExportPlan(
     const span = run[run.length - 1].srcEnd - s0;
     const expr = run.map((s) => `gte(t,${num(s.srcStart - s0 - HALF)})*lt(t,${num(s.srcEnd - s0 - HALF)})`).join('+');
     const vin = inputs.length;
+    const still = m.kind === 'image';
     // A photo on the main track is a looped still: any part of it looks the same.
-    if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(span + 0.5), '-i', m.sourcePath]);
-    else inputs.push(['-ss', num(s0), '-t', num(span + 0.5), '-i', m.sourcePath]);
+    const input = still
+      ? ['-loop', '1', '-framerate', String(FPS), '-t', num(span + 0.5), '-i', m.sourcePath]
+      : ['-ss', num(s0), '-t', num(span + 0.5), '-i', m.sourcePath];
+    inputs.push(input);
+    const pic = pictureOf(doc.clips[run[0].clipIndex]);
+    // The frames of the clip, one every 1/30 s from its start.
+    const head = `settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS}`;
+    // Stabilisation works on the frames as they were shot, before any cut.
+    let steady = '';
+    if (pic.stabilize && !still) {
+      const level = STABILIZE_LEVELS[pic.stabilize - 1];
+      if (options.vidstab) {
+        const file = `stab-${k}.trf`;
+        stabilize.push({ input, filter: `${head},vidstabdetect=shakiness=8:accuracy=15:result=${file}`, file, duration: span + 0.5 });
+        steady = `,vidstabtransform=input=${file}:smoothing=${level.smoothing}:optzoom=1:interpol=bicubic`;
+      } else steady = `,deshake=rx=${level.shake}:ry=${level.shake}:edge=mirror`;
+    }
+    const denoise = !still && improveFilters(pic).denoise;
     // A clip at another speed: retime the kept frames and force the exact number of frames it takes on the timeline.
-    const speed = m.kind === 'image' ? 1 : run[0].speed;
+    const speed = still ? 1 : run[0].speed;
     const frames = Math.round((run[run.length - 1].tlEnd - run[0].tlStart) * FPS);
+    // Slow motion repeats frames; with "flujo óptico" the ones in between are worked out (on a picture no larger than needed).
+    const big = Math.max(m.width ?? 0, m.height ?? 0);
+    const shrink = big > H ? `scale=${even(((m.width ?? 0) * H) / big)}:${even(((m.height ?? 0) * H) / big)},` : '';
+    const retimeFps =
+      pic.opticalFlow && speed < 1 ? `${shrink}minterpolate=fps=${FPS}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1` : `fps=${FPS}`;
     const retimeV =
-      speed === 1 ? '' : `,setpts=PTS/${num(speed)},fps=${FPS},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/${FPS}/TB`;
+      speed === 1 ? '' : `,setpts=PTS/${num(speed)},${retimeFps},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=N/${FPS}/TB`;
     const retimeA = speed === 1 ? '' : `,${atempo(speed)},apad=pad_dur=1,atrim=end_sample=${frames * 1600},asetpts=N/SR/TB`;
-    filters.push(`[${vin}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},select='${expr}',setpts=N/${FPS}/TB${retimeV}[vr${k}]`);
-    filters.push(...fitChain(`vr${k}`, `v${k}`, doc.settings.fitMode, k));
+    filters.push(`[${vin}:v:0]${head}${steady},select='${expr}',setpts=N/${FPS}/TB${denoise ? `,${denoise}` : ''}${retimeV}[vr${k}]`);
+    filters.push(...fitChain(`vr${k}`, `v${k}`, doc.settings.fitMode, k, pic, m));
     let audio = `${vin}:a:0`;
     const mix = doc.audioMix?.[m.id];
     if (m.hasAudio && mix && m.stems) {
@@ -159,15 +251,44 @@ export function buildExportPlan(
     const idx = inputs.length;
     if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(dur + 0.2), '-i', m.sourcePath]);
     else inputs.push(['-ss', num(Math.max(0, b.srcIn)), '-t', num(dur + 0.2), '-i', m.sourcePath]);
-    // Full-frame b-roll is cropped to cover; a moved or resized overlay keeps its shape (sticker, picture-in-picture).
-    const rect = overlayRect(m.width ?? 0, m.height ?? 0, W, H, b.x ?? 0.5, b.y ?? 0.5, b.scale ?? 1);
-    const full = (b.scale ?? 1) === 1 && (b.x ?? 0.5) === 0.5 && (b.y ?? 0.5) === 0.5;
-    const size = full ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}` : `scale=${even(rect.width)}:${even(rect.height)}`;
-    const at = full ? '0:0' : `${Math.round(rect.left)}:${Math.round(rect.top)}`;
+    const pic = pictureOf(b);
+    const shown = `eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'`;
+    const timed = `trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB`;
+    if (pic.rotation === 0 && pic.uniform && pic.opacity === 1 && pic.blend === 'normal' && !hasImprovements(pic)) {
+      // Full-frame b-roll is cropped to cover; a moved or resized overlay keeps its shape (sticker, picture-in-picture).
+      const rect = overlayRect(m.width ?? 0, m.height ?? 0, W, H, pic.x, pic.y, pic.scale);
+      const full = pic.scale === 1 && pic.x === 0.5 && pic.y === 0.5;
+      const size = full ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}` : `scale=${even(rect.width)}:${even(rect.height)}`;
+      const at = full ? '0:0' : `${Math.round(rect.left)}:${Math.round(rect.top)}`;
+      filters.push(`[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},${size},setsar=1,format=yuva420p,${timed}[b${j}]`);
+      filters.push(`[${video}][b${j}]overlay=${at}:${shown}[vb${j}]`);
+      video = `vb${j}`;
+      return;
+    }
+    // Turned, stretched, see-through, blended or improved: only its visible part is drawn.
+    const place = placePicture(pictureRect(m.width ?? 0, m.height ?? 0, pic), pic.rotation);
+    if (!place || pic.opacity <= 0) return;
+    const { chain, x, y } = pictureChain(pic, place);
+    const denoise = m.kind === 'video' && improveFilters(pic).denoise;
     filters.push(
-      `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},${size},setsar=1,format=yuva420p,trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB[b${j}]`,
+      `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS}${denoise ? `,${denoise}` : ''},${chain.join(',')},format=rgba,${timed}[b${j}]`,
     );
-    filters.push(`[${video}][b${j}]overlay=${at}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vb${j}]`);
+    if (pic.blend === 'normal') {
+      filters.push(`[${video}][b${j}]overlay=x=${x}:y=${y}:${shown}[vb${j}]`);
+    } else {
+      // The overlay alone on a see-through frame, mixed with the video in RGB and put back only where the overlay is.
+      filters.push(
+        `[${video}]split=3[obv${j}][obw${j}][obz${j}]`,
+        `[obz${j}]format=rgba,colorchannelmixer=aa=0[obc${j}]`,
+        `[obc${j}][b${j}]overlay=x=${x}:y=${y}:format=rgb:${shown},split=2[obl${j}][obm${j}]`,
+        `[obm${j}]alphaextract[oba${j}]`,
+        `[obw${j}]format=gbrp[obg${j}]`,
+        `[obl${j}]format=gbrp[obf${j}]`,
+        `[obg${j}][obf${j}]blend=all_mode=${blendMode(pic.blend).ffmpeg}[obb${j}]`,
+        `[obb${j}][oba${j}]alphamerge[obx${j}]`,
+        `[obv${j}][obx${j}]overlay=format=auto[vb${j}]`,
+      );
+    }
     video = `vb${j}`;
   });
 
@@ -229,7 +350,7 @@ export function buildExportPlan(
   if (music.length) filters.push(`[amain]${music.join('')}amix=inputs=${music.length + 1}:duration=first:dropout_transition=0:normalize=0[aout]`);
   else filters.push('[amain]anull[aout]');
 
-  return { inputs, filter: filters.join(';\n'), duration: total, ass, fontFile };
+  return { inputs, filter: filters.join(';\n'), duration: total, ass, fontFile, stabilize };
 }
 
 const QUALITY: Record<ExportQuality, string[]> = {
@@ -291,8 +412,17 @@ export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: Jo
     await writeFile(path.join(work, file), t.png);
     textImages.push({ id: t.id, file, width: t.width, height: t.height });
   }
-  const plan = buildExportPlan(doc, media, transcripts, textImages);
-  await renderPlan(plan, out, work, quality, (p) => ctx.progress(0.01 + p * 0.98, 'Renderizando'), ctx.signal);
+  const plan = buildExportPlan(doc, media, transcripts, textImages, { vidstab: await ffmpegHasFilter('vidstabtransform') });
+  // Measuring the shake of the clips to stabilise takes a part of the bar; the render, the rest.
+  const first = plan.stabilize.length ? 0.3 : 0;
+  await renderPlan(
+    plan,
+    out,
+    work,
+    quality,
+    (p, stage = 'Renderizando') => ctx.progress(0.01 + (stage === 'Renderizando' ? first + p * (0.98 - first) : p * first), stage),
+    ctx.signal,
+  );
   const size = (await stat(out)).size;
   return { name, url: `/api/exports/${encodeURIComponent(name)}`, duration: plan.duration, size };
 }
@@ -309,11 +439,26 @@ export async function renderPlan(
   out: string,
   work: string,
   quality: ExportQuality,
-  onProgress: (p: number) => void,
+  onProgress: (p: number, stage?: string) => void,
   signal?: AbortSignal,
 ) {
   await mkdir(work, { recursive: true });
   await mkdir(path.dirname(out), { recursive: true });
+  // First pass of the stabilisation: how the camera moves in each clip, written to a file the render reads.
+  const reading = plan.stabilize.reduce((n, pass) => n + pass.duration, 0);
+  let read = 0;
+  for (const [i, pass] of plan.stabilize.entries()) {
+    const stage = plan.stabilize.length > 1 ? `Estabilizando (${i + 1} de ${plan.stabilize.length})` : 'Estabilizando';
+    // prettier-ignore
+    const args = ['-y', '-loglevel', 'error', ...pass.input, '-an', '-sn', '-vf', pass.filter, '-f', 'null', '-'];
+    await ffmpegWithProgress(args, pass.duration, (p) => onProgress((read + p * pass.duration) / reading, stage), { cwd: work, signal }).catch(
+      async (err) => {
+        if (signal?.aborted) await rm(work, { recursive: true, force: true });
+        throw err;
+      },
+    );
+    read += pass.duration;
+  }
   if (plan.ass && plan.fontFile) {
     await writeFile(path.join(work, 'subs.ass'), plan.ass);
     await mkdir(path.join(work, 'fonts'), { recursive: true });

@@ -127,10 +127,12 @@ const send = (method, body) => ({ method, headers: { 'content-type': 'applicatio
     );
 
     // ---- editor: settings button and the export default
-    await page.waitForSelector('button[aria-label="Ajustes"]');
+    // The home screen has its own "Ajustes" button: wait until the editor is the page on screen.
+    // (The title is matched exactly: the hint of the language setting also says "proyectos nuevos".)
+    await page.waitForSelector('[data-timeline]');
     await page.click('button[aria-label="Ajustes"]');
-    await page.waitForSelector('[data-settings] >> text=Proyectos nuevos', { timeout: 8000 }).catch(() => undefined);
-    ok('el editor tiene el botón Ajustes y abre el mismo diálogo', (await page.locator('[data-settings] >> text=Proyectos nuevos').count()) === 1);
+    await page.waitForSelector('[data-settings] >> text="Proyectos nuevos"', { timeout: 8000 }).catch(() => undefined);
+    ok('el editor tiene el botón Ajustes y abre el mismo diálogo', (await page.locator('[data-settings] >> text="Proyectos nuevos"').count()) === 1);
     await page.locator('[data-settings]').getByRole('button', { name: 'Alta', exact: true }).click();
     for (let i = 0; i < 30 && (await j('/api/settings')).settings.exportQuality !== 'high'; i++) await page.waitForTimeout(100);
     await page.keyboard.press('Escape');

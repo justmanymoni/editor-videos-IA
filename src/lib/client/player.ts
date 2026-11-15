@@ -22,6 +22,18 @@ const END_EPS = 0.012;
 type Deck = HTMLVideoElement | HTMLImageElement;
 const isVideo = (el: Deck | undefined): el is HTMLVideoElement => el instanceof HTMLVideoElement;
 
+/** How the clip being shown is drawn on the frame (pixels of the 1080x1920 stage). */
+export interface DeckLook {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  /** CSS filter ("Mejorar la calidad"). */
+  filter: string;
+}
+
 /**
  * Sound of one main deck, routed through Web Audio so that volume changes are
  * heard at once. `plain` carries the clip's normal sound. When the deck plays
@@ -58,6 +70,8 @@ class PlayerEngine {
   private stopAt: number | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private blur = false;
+  /** Position, size, turn and opacity of every clip of the main track, by clip id. */
+  private looks: Record<string, DeckLook> = {};
 
   registerDeck(key: string, el: Deck | null) {
     const prev = this.decks.get(key);
@@ -192,6 +206,32 @@ class PlayerEngine {
     this.drawBlur();
   }
 
+  /** The clips' picture settings ("Vídeo" tab). The one on screen is redrawn at once. */
+  setLooks(looks: Record<string, DeckLook>) {
+    this.looks = looks;
+    this.applyLook();
+  }
+
+  /** Draws the deck on screen where its clip is placed, with its size, turn and opacity. */
+  private applyLook() {
+    const el = this.deckFor(this.cur);
+    if (!el) return;
+    const look = this.looks[this.segs[this.cur]?.clipId ?? ''];
+    if (!look) {
+      el.style.opacity = '1';
+      return;
+    }
+    const s = el.style;
+    s.left = `${look.left}px`;
+    s.top = `${look.top}px`;
+    s.width = `${look.width}px`;
+    s.height = `${look.height}px`;
+    s.objectFit = 'fill';
+    s.transform = look.rotation ? `rotate(${look.rotation}deg)` : '';
+    s.filter = look.filter;
+    s.opacity = String(look.opacity);
+  }
+
   setTimeline(segs: Segment[], broll: BrollItem[], music: AudioItem[], mainVolume: number) {
     const changed = segs !== this.segs;
     this.segs = segs;
@@ -215,10 +255,11 @@ class PlayerEngine {
 
   private show(active: Deck | undefined) {
     for (const d of this.decks.values()) {
-      const on = d === active;
-      d.style.opacity = on ? '1' : '0';
-      if (!on && isVideo(d) && !d.paused) d.pause();
+      if (d === active) continue;
+      d.style.opacity = '0';
+      if (isVideo(d) && !d.paused) d.pause();
     }
+    this.applyLook();
   }
 
   /** Source time of a deck: the video position, or the photo's own clock. */
@@ -341,7 +382,7 @@ class PlayerEngine {
       const el = this.overlays.get(b.id);
       if (!el) continue;
       const active = t >= b.start && t < b.start + b.duration;
-      el.style.opacity = active ? '1' : '0';
+      el.style.opacity = active ? String(b.opacity ?? 1) : '0';
       // Only visible overlays can be clicked and dragged in the preview.
       el.style.pointerEvents = active ? 'auto' : 'none';
       if (!(el instanceof HTMLVideoElement)) continue;

@@ -805,6 +805,39 @@ export function runCleanup(kind: CleanupKind) {
   );
 }
 
+/**
+ * "Subtítulos automáticos" (key G): puts subtitles on the whole video from
+ * the voice, transcribing the clips that still lack a transcript. When they
+ * are already on, takes them off.
+ */
+export function toggleAutoSubtitles() {
+  const s = ed();
+  const doc = s.doc;
+  if (!doc) return;
+  if (doc.subtitles.enabled) {
+    s.commit((d) => void (d.subtitles.enabled = false));
+    return s.toast('Subtítulos quitados. Pulsa G para volver a ponerlos.');
+  }
+  s.commit((d) => void (d.subtitles.enabled = true));
+  const videos = [...new Set(doc.clips.map((c) => c.mediaId))].map((id) => s.media[id]).filter((m) => m?.kind === 'video' && m.hasAudio);
+  if (!videos.length) return s.toast('Añade un vídeo con voz y los subtítulos aparecerán solos');
+  if (s.status?.transcriber === 'none') {
+    s.toast('Para crear los subtítulos hace falta la transcripción de voz. Instálala en Ajustes.');
+    return s.set({ setupOpen: true });
+  }
+  // Clips that were never transcribed (or failed) are transcribed now.
+  const missing = videos.filter((m) => m.transcript.status === 'none' || m.transcript.status === 'error');
+  for (const m of missing) void retranscribe(m.id);
+  const pending = missing.length + videos.filter((m) => m.transcript.status === 'queued' || m.transcript.status === 'running').length;
+  const blocks = currentDerived().pages.length;
+  s.toast(
+    pending
+      ? `Transcribiendo ${pending === 1 ? 'el vídeo' : `${pending} vídeos`}: los subtítulos aparecerán en cuanto termine`
+      : `Subtítulos puestos en todo el vídeo (${blocks} ${blocks === 1 ? 'bloque' : 'bloques'})`,
+    'success',
+  );
+}
+
 export function clearCuts(reason: 'silence' | 'filler' | 'retake' | 'manual' | 'all') {
   ed().commitDoc((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, cuts: reason === 'all' ? [] : c.cuts.filter((x) => x.reason !== reason) })) }));
 }

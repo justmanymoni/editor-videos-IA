@@ -152,7 +152,17 @@ export interface TextItem {
   color: string;
   outlineColor: string;
   outlineWidth: number;
+  /** Extra space between characters, in frame pixels (can be negative). */
+  letterSpacing: number;
+  /** Shadow: see `Shadow`. `shadow` is its distance in frame pixels. */
+  shadowOn: boolean;
   shadow: number;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  shadowAngle: number;
+  /** Row of the timeline it sits on: higher rows are drawn on top. */
+  lane?: number;
   /** none = straight lines, arc = along a circle, wave = along a sine wave. */
   curve: 'none' | 'arc' | 'wave';
   /**
@@ -170,18 +180,49 @@ export interface TextItem {
   animOut: TextAnimation;
 }
 
+/** The soft shadow new texts and subtitles start with (they have no outline). */
+export const DEFAULT_SHADOW = { shadowOn: true, shadow: 6, shadowColor: '#000000', shadowOpacity: 0.7, shadowBlur: 8, shadowAngle: -45 } as const;
+
+/**
+ * Where a shadow falls. `angle` is in degrees, counter-clockwise from the
+ * right as in CapCut: −45 puts it below and to the right of the text.
+ */
+export function shadowOffset(distance: number, angle: number): { dx: number; dy: number } {
+  const rad = (angle * Math.PI) / 180;
+  // "|| 0" turns −0 into 0.
+  return { dx: Math.round(distance * Math.cos(rad) * 100) / 100 || 0, dy: Math.round(-distance * Math.sin(rad) * 100) / 100 || 0 };
+}
+
+/**
+ * Shadow settings of a text or subtitle style saved before shadows could be
+ * adjusted: a hard black shadow at 50 %, `shadow` pixels down and right.
+ */
+function legacyShadow(raw: { shadowOn?: boolean; shadow?: number }) {
+  if (raw.shadowOn !== undefined) return {};
+  const offset = raw.shadow ?? 0;
+  return {
+    shadowOn: offset > 0,
+    shadow: Math.round(offset * Math.SQRT2 * 10) / 10,
+    shadowColor: '#000000',
+    shadowOpacity: 0.5,
+    shadowBlur: 0,
+    shadowAngle: -45,
+  };
+}
+
 export const DEFAULT_TEXT: Omit<TextItem, 'id' | 'start' | 'duration'> = {
   text: 'Tu texto',
   x: 0.5,
   y: 0.4,
   scale: 1,
   rotation: 0,
-  fontId: 'montserrat-black',
+  fontId: 'montserrat-bold',
   fontSize: 96,
   color: '#FFFFFF',
   outlineColor: '#000000',
-  outlineWidth: 6,
-  shadow: 4,
+  outlineWidth: 0,
+  letterSpacing: 0,
+  ...DEFAULT_SHADOW,
   curve: 'none',
   curveAmount: 50,
   bgColor: '',
@@ -207,6 +248,8 @@ export interface AudioItem {
 export type SubtitleAnimation =
   'none' | 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom' | 'pop' | 'blur' | 'rotate' | 'typewriter' | 'drop';
 
+export type TextCase = 'none' | 'upper' | 'lower' | 'title';
+
 export interface SubtitleStyle {
   enabled: boolean;
   fontId: string;
@@ -215,8 +258,18 @@ export interface SubtitleStyle {
   textColor: string;
   highlightColor: string;
   outlineColor: string;
+  /** Stroke around the letters, in frame pixels; 0 = none. */
   outlineWidth: number;
+  /** Extra space between characters, in frame pixels (can be negative). */
+  letterSpacing: number;
+  underline: boolean;
+  /** Shadow: on / off, distance in frame pixels (`shadow`), colour, opacity 0..1, blur in pixels and direction (see shadowOffset). */
+  shadowOn: boolean;
   shadow: number;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  shadowAngle: number;
   /** Centre of the subtitle block, 0..100 % of the frame width and height. */
   positionX: number;
   positionY: number;
@@ -230,7 +283,8 @@ export interface SubtitleStyle {
   /** Animation when a block appears, and whether it fades away at the end. */
   animationIn: SubtitleAnimation;
   animationOut: 'none' | 'fade';
-  uppercase: boolean;
+  /** As written, ALL CAPITALS, all lower case or Capitalised Words. */
+  textCase: TextCase;
   stripPunctuation: boolean;
   wordsPerPage: number;
   maxCharsPerLine: number;
@@ -321,6 +375,8 @@ export interface AppSettings {
   fitMode: FitMode;
   /** Quick style (see subtitle-presets) the subtitles of new projects start with. */
   subtitlePreset: string;
+  /** New projects show the automatic subtitles from the start (they can always be added with G). */
+  autoSubtitles: boolean;
   /** Quality selected when the export dialog opens. */
   exportQuality: 'fast' | 'normal' | 'high';
 }
@@ -328,9 +384,10 @@ export interface AppSettings {
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   language: 'es',
   autoSilence: true,
-  silenceMin: 0.4,
+  silenceMin: 1,
   fitMode: 'cover',
-  subtitlePreset: 'amarillo',
+  subtitlePreset: 'montserrat',
+  autoSubtitles: true,
   exportQuality: 'normal',
 };
 
@@ -386,13 +443,16 @@ export const DEFAULT_FILLERS = ['eh', 'ehm', 'em', 'mm', 'hmm', 'uh', 'um', 'o s
 
 export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   enabled: true,
-  fontId: 'montserrat-black',
+  // Montserrat without outline, with a soft shadow so it reads on any video.
+  fontId: 'montserrat-bold',
   fontSize: 86,
   textColor: '#FFFFFF',
   highlightColor: '#FFE600',
   outlineColor: '#000000',
-  outlineWidth: 6,
-  shadow: 4,
+  outlineWidth: 0,
+  letterSpacing: 0,
+  underline: false,
+  ...DEFAULT_SHADOW,
   positionX: 50,
   positionY: 72,
   highlight: true,
@@ -401,7 +461,7 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   dimUpcoming: false,
   animationIn: 'none',
   animationOut: 'none',
-  uppercase: true,
+  textCase: 'upper',
   stripPunctuation: true,
   wordsPerPage: 3,
   maxCharsPerLine: 16,
@@ -411,7 +471,7 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
 export const DEFAULT_SETTINGS: ProjectSettings = {
   language: 'es',
   fitMode: 'cover',
-  silenceMin: 0.4,
+  silenceMin: 1,
   silencePadding: 0.1,
   fillers: DEFAULT_FILLERS,
   mainVolume: 1,
@@ -439,6 +499,14 @@ export function createProjectDoc(id: string, name: string, language = 'es'): Pro
   };
 }
 
+/** Completes a subtitle style, reading the fields of older versions (`uppercase`, the fixed hard shadow). */
+export function normalizeSubtitleStyle(raw: (Partial<SubtitleStyle> & { uppercase?: boolean }) | undefined): SubtitleStyle {
+  if (!raw) return { ...DEFAULT_SUBTITLE_STYLE };
+  const { uppercase, ...rest } = raw;
+  const textCase: TextCase = rest.textCase ?? (uppercase === undefined ? DEFAULT_SUBTITLE_STYLE.textCase : uppercase ? 'upper' : 'none');
+  return { ...DEFAULT_SUBTITLE_STYLE, ...rest, ...legacyShadow(rest), textCase };
+}
+
 /** Fills in fields that older or hand-edited project files may lack. */
 export function normalizeProjectDoc(raw: ProjectDoc): ProjectDoc {
   return {
@@ -449,8 +517,8 @@ export function normalizeProjectDoc(raw: ProjectDoc): ProjectDoc {
     clips: (raw.clips ?? []).map((c) => ({ ...c, cuts: c.cuts ?? [] })),
     broll: raw.broll ?? [],
     audio: raw.audio ?? [],
-    texts: (raw.texts ?? []).map((t) => ({ ...DEFAULT_TEXT, ...t })),
-    subtitles: { ...DEFAULT_SUBTITLE_STYLE, ...(raw.subtitles ?? {}) },
+    texts: (raw.texts ?? []).map((t) => ({ ...DEFAULT_TEXT, ...t, ...legacyShadow(t) })),
+    subtitles: normalizeSubtitleStyle(raw.subtitles),
     words: raw.words ?? {},
     script: raw.script ?? '',
     audioMix: raw.audioMix ?? {},

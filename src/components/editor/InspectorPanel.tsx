@@ -7,6 +7,7 @@ import { Properties } from './Properties';
 import { AudioPanel } from './AudioPanel';
 import { AnimationPanel } from './AnimationPanel';
 import { SpeedPanel } from './SpeedPanel';
+import { SmartPanel } from './SmartPanel';
 
 /** Right-hand panel, as in CapCut: one tab per kind of setting. */
 export function InspectorPanel() {
@@ -27,6 +28,7 @@ export function InspectorPanel() {
     ['subtitles', 'Subtítulos'],
     ['animation', 'Animación'],
     ['speed', 'Velocidad'],
+    ['smart', 'Inteligente'],
   ];
 
   return (
@@ -56,8 +58,10 @@ export function InspectorPanel() {
           <SubtitleStylePanel />
         ) : tab === 'animation' ? (
           <AnimationPanel />
-        ) : (
+        ) : tab === 'speed' ? (
           <SpeedPanel />
+        ) : (
+          <SmartPanel />
         )}
       </div>
     </aside>

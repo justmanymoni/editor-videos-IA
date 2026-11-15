@@ -103,14 +103,15 @@ export function SettingsDialog({
                 onChange={(v) => save({ autoSilence: v })}
               />
               <SliderRow
-                label="Silencio mínimo"
+                label="Pausas de más de"
                 value={settings.silenceMin}
                 min={0.2}
-                max={2}
-                step={0.05}
+                max={3}
+                step={0.1}
                 unit="s"
                 onChange={(v) => save({ silenceMin: v })}
               />
+              <Toggle label="Poner los subtítulos automáticamente" checked={settings.autoSubtitles} onChange={(v) => save({ autoSubtitles: v })} />
               <Row label="Subtítulos">
                 <select
                   value={settings.subtitlePreset}

@@ -34,10 +34,13 @@ const MAX_LINES = 2;
 const PAGE_GAP = 0.6;
 const HOLD = 0.35;
 
-export function subtitleText(text: string, style: Pick<SubtitleStyle, 'uppercase' | 'stripPunctuation'>): string {
+export function subtitleText(text: string, style: Pick<SubtitleStyle, 'textCase' | 'stripPunctuation'>): string {
   let t = text.trim();
   if (style.stripPunctuation) t = t.replace(/[.,;:!?¡¿…"“”«»()]/g, '');
-  if (style.uppercase) t = t.toLocaleUpperCase('es');
+  if (style.textCase === 'upper') t = t.toLocaleUpperCase('es');
+  else if (style.textCase === 'lower') t = t.toLocaleLowerCase('es');
+  else if (style.textCase === 'title')
+    t = t.toLocaleLowerCase('es').replace(/^(\P{L}*)(\p{L})/u, (_, lead: string, first: string) => lead + first.toLocaleUpperCase('es'));
   return t.trim();
 }
 

@@ -13,14 +13,16 @@ export interface TextPreset {
   style: Partial<Omit<TextItem, 'id' | 'text' | 'start' | 'duration'>>;
 }
 
-const plain = { outlineWidth: 0, shadow: 0 } as const;
+/** A hard shadow of the given size (as these looks were designed), or none. */
+const hard = (shadow: number) => ({ shadowOn: shadow > 0, shadow, shadowBlur: 0, shadowOpacity: 0.5 });
+const plain = { outlineWidth: 0, ...hard(0) } as const;
 
 export const TEXT_PRESETS: TextPreset[] = [
   {
     id: 'impacto',
     name: 'Título impacto',
     sample: 'ESTO CAMBIA\nTODO',
-    style: { fontId: 'anton', fontSize: 150, color: '#FFFFFF', outlineWidth: 0, shadow: 8, y: 0.3, animIn: 'pop', animOut: 'fade' },
+    style: { fontId: 'anton', fontSize: 150, color: '#FFFFFF', outlineWidth: 0, ...hard(8), y: 0.3, animIn: 'pop', animOut: 'fade' },
   },
   {
     id: 'clave',
@@ -134,7 +136,7 @@ export const TEXT_PRESETS: TextPreset[] = [
     id: 'numero',
     name: 'Número',
     sample: '01',
-    style: { fontId: 'anton', fontSize: 300, color: '#FFE600', outlineWidth: 10, shadow: 0, y: 0.3, animIn: 'zoom-out', animOut: 'fade' },
+    style: { fontId: 'anton', fontSize: 300, color: '#FFE600', outlineWidth: 10, ...hard(0), y: 0.3, animIn: 'zoom-out', animOut: 'fade' },
   },
   {
     id: 'pop',
@@ -146,7 +148,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       color: '#FF3D9A',
       outlineColor: '#FFFFFF',
       outlineWidth: 10,
-      shadow: 8,
+      ...hard(8),
       rotation: -5,
       animIn: 'pop',
       animOut: 'zoom-out',
@@ -162,7 +164,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       color: '#FFE600',
       outlineColor: '#000000',
       outlineWidth: 10,
-      shadow: 10,
+      ...hard(10),
       rotation: -6,
       animIn: 'pop',
       animOut: 'fade',
@@ -172,19 +174,19 @@ export const TEXT_PRESETS: TextPreset[] = [
     id: 'limpio',
     name: 'Limpio',
     sample: 'Una frase sencilla',
-    style: { fontId: 'montserrat-bold', fontSize: 70, color: '#FFFFFF', outlineWidth: 4, shadow: 3, animIn: 'fade', animOut: 'fade' },
+    style: { fontId: 'montserrat-bold', fontSize: 70, color: '#FFFFFF', outlineWidth: 4, ...hard(3), animIn: 'fade', animOut: 'fade' },
   },
   {
     id: 'elegante',
     name: 'Elegante',
     sample: 'Menos es más',
-    style: { fontId: 'playfair-italic', fontSize: 96, color: '#FFFFFF', outlineWidth: 0, shadow: 5, animIn: 'fade', animOut: 'fade' },
+    style: { fontId: 'playfair-italic', fontSize: 96, color: '#FFFFFF', outlineWidth: 0, ...hard(5), animIn: 'fade', animOut: 'fade' },
   },
   {
     id: 'manuscrita',
     name: 'Manuscrita',
     sample: 'hecho con cariño',
-    style: { fontId: 'pacifico', fontSize: 96, color: '#FFFFFF', outlineWidth: 0, shadow: 5, rotation: -4, animIn: 'zoom', animOut: 'fade' },
+    style: { fontId: 'pacifico', fontSize: 96, color: '#FFFFFF', outlineWidth: 0, ...hard(5), rotation: -4, animIn: 'zoom', animOut: 'fade' },
   },
   {
     id: 'maquina',
@@ -211,7 +213,7 @@ export const TEXT_PRESETS: TextPreset[] = [
       fontSize: 120,
       color: '#FFFFFF',
       outlineWidth: 6,
-      shadow: 4,
+      ...hard(4),
       curve: 'arc',
       curveAmount: 40,
       y: 0.25,

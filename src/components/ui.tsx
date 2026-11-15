@@ -1,6 +1,6 @@
 'use client';
 import clsx from 'clsx';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { useEffect, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { useEditor } from '@/lib/client/store';
 
@@ -192,6 +192,77 @@ export function Section({ title, children }: { title: string; children: ReactNod
       <h3 className="text-xs font-semibold text-fg">{title}</h3>
       {children}
     </section>
+  );
+}
+
+/** A group of settings switched on with a checkbox, as in CapCut: its controls only show while it is on. */
+export function CheckSection({
+  title,
+  checked,
+  onChange,
+  children,
+}: {
+  title: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="flex flex-col gap-2 border-b border-line px-3.5 py-2.5 last:border-0">
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        aria-label={title}
+        onClick={() => onChange(!checked)}
+        onMouseUp={(e) => e.currentTarget.blur()}
+        className="flex items-center gap-2 self-start text-left text-xs font-semibold text-fg"
+      >
+        <span
+          className={clsx(
+            'flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border',
+            checked ? 'border-accent bg-accent text-black' : 'border-faint',
+          )}
+        >
+          {checked && <Check size={10} strokeWidth={4} />}
+        </span>
+        {title}
+      </button>
+      {checked && children}
+    </section>
+  );
+}
+
+/** A small square button that stays pressed (B, I, TT…). */
+export function MiniToggle({
+  active,
+  disabled,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseUp={(e) => e.currentTarget.blur()}
+      className={clsx(
+        'flex h-7 min-w-8 items-center justify-center rounded px-1.5 text-xs transition-colors disabled:opacity-30',
+        active ? 'bg-accent text-black' : 'bg-panel-3 text-fg hover:bg-line-strong',
+      )}
+    >
+      {children}
+    </button>
   );
 }
 

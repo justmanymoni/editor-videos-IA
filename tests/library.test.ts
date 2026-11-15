@@ -24,9 +24,9 @@ afterAll(() => {
 describe('general settings', () => {
   it('start with the defaults and keep only valid values', async () => {
     const { getAppSettings, saveAppSettings, sanitizeAppSettings } = await import('@/lib/server/app-settings');
-    expect(await getAppSettings()).toMatchObject({ autoSilence: true, exportQuality: 'normal', subtitlePreset: 'amarillo' });
+    expect(await getAppSettings()).toMatchObject({ autoSilence: true, exportQuality: 'normal', subtitlePreset: 'montserrat' });
     const saved = await saveAppSettings({ language: 'en', exportQuality: 'high', silenceMin: 9, subtitlePreset: 'caja' });
-    expect(saved).toMatchObject({ language: 'en', exportQuality: 'high', silenceMin: 2, subtitlePreset: 'caja' });
+    expect(saved).toMatchObject({ language: 'en', exportQuality: 'high', silenceMin: 3, subtitlePreset: 'caja' });
     expect(await getAppSettings()).toEqual(saved);
     // Nonsense is ignored, field by field.
     const bad = sanitizeAppSettings(
@@ -39,7 +39,7 @@ describe('general settings', () => {
   it('every quick style has an id and gives a complete style', () => {
     expect(new Set(SUBTITLE_PRESETS.map((p) => p.id)).size).toBe(SUBTITLE_PRESETS.length);
     expect(presetStyle('caja').highlightBox).toBe(true);
-    expect(presetStyle('does-not-exist')).toEqual(presetStyle('amarillo'));
+    expect(presetStyle('does-not-exist')).toEqual(presetStyle('montserrat'));
   });
 });
 

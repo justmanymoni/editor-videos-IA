@@ -59,7 +59,7 @@ export async function createProject(name: string, from?: ProjectDoc, folderId?: 
     const app = await getAppSettings();
     doc = createProjectDoc(id, name || 'Proyecto sin título', app.language);
     doc.settings = { ...doc.settings, autoSilence: app.autoSilence, silenceMin: app.silenceMin, fitMode: app.fitMode };
-    doc.subtitles = presetStyle(app.subtitlePreset);
+    doc.subtitles = { ...presetStyle(app.subtitlePreset), enabled: app.autoSubtitles };
   }
   await writeJsonAtomic(fileOf(id), doc);
   if (folderId) await moveProjects([id], folderId).catch(() => undefined);

@@ -20,7 +20,7 @@ export function transcriptText(clipWords: ClipWords[], includeCut = false): stri
 }
 
 /** Readable caption layout for SRT/VTT, independent of the burned-in style. */
-const CAPTION_STYLE: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, uppercase: false, stripPunctuation: false, wordsPerPage: 9, maxCharsPerLine: 42 };
+const CAPTION_STYLE: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, textCase: 'none', stripPunctuation: false, wordsPerPage: 9, maxCharsPerLine: 42 };
 
 export function captionPages(clipWords: ClipWords[]): SubPage[] {
   return buildPages(collectSubWords(clipWords, CAPTION_STYLE), CAPTION_STYLE);

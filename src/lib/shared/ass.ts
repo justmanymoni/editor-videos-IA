@@ -4,7 +4,7 @@
  * the same and only the highlighted word changes.
  */
 import type { SubtitleStyle } from './types';
-import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from './types';
+import { OUTPUT_HEIGHT, OUTPUT_WIDTH, shadowOffset } from './types';
 import type { SubPage } from './subtitles';
 import { assFontSize, getFont } from './fonts';
 import { DROP_SCALE, LETTER_SETTLE, animTimes, isLetterAnimation, letterStep, slideOffset } from './subtitle-anim';
@@ -52,6 +52,8 @@ export const BOX_PAD_X = 0.18;
 export const BOX_PAD_Y = 0.03;
 /** Opacity of the words that have not been said yet, when they are dimmed. */
 export const DIM_OPACITY = 0.4;
+/** CSS `text-shadow` blur radius → libass blur strength that looks the same. */
+export const SHADOW_BLUR = 0.5;
 const alpha = (opacity: number) =>
   `&H${Math.round((1 - opacity) * 255)
     .toString(16)
@@ -59,12 +61,17 @@ const alpha = (opacity: number) =>
     .toUpperCase()}&`;
 
 /**
- * One event per subtitle block. The spoken word is recoloured with instant
- * "t" transforms, and the entrance animation uses move, fad and t tags, so
- * everything stays inside a single line that libass lays out once.
+ * Every subtitle block is laid out once by libass and drawn in up to three
+ * events with exactly the same text and sizes, one over another:
  *
- * Tags set in one override block carry over to the text after it, so every
- * word (and every letter, for per-letter animations) states its own values.
+ *   0. the shadow: a copy in the shadow colour, shifted and blurred;
+ *   1. the box of the word being said (BorderStyle 3), when that style is on;
+ *   2. the text itself.
+ *
+ * The spoken word is recoloured with instant "t" transforms, and the entrance
+ * animation uses move, fad and t tags. Tags set in one override block carry
+ * over to the text after it, so every word (and every letter, for per-letter
+ * animations) states its own values.
  */
 export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
   const font = getFont(style.fontId);
@@ -80,12 +87,15 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
   const boxText = assInlineColor(style.boxTextColor);
   // Letter animations already reveal the text little by little.
   const dim = style.dimUpcoming && !perLetter;
-  const boxLine = boxed
-    ? [
-        // Same font and size, drawn as an opaque box (BorderStyle 3) under the text: its fill is invisible and the box only shows on the active word.
-        `Style: Box,${font.assFamily},${size},${assStyleColor(style.textColor, 0xff)},${assStyleColor(style.textColor, 0xff)},${assStyleColor(style.highlightColor)},${assStyleColor('#000000', 0xff)},${font.bold ? -1 : 0},${font.italic ? -1 : 0},0,0,100,100,0,0,3,0,0,5,0,0,0,1`,
-      ]
-    : [];
+  const shadowed = style.shadowOn && style.shadowOpacity > 0 && (style.shadow > 0 || style.shadowBlur > 0);
+  const shade = shadowOffset(style.shadow, style.shadowAngle);
+  const shadowColor = assInlineColor(style.shadowColor);
+  const shadowAlpha = alpha(style.shadowOpacity);
+  const shadowBlur = Math.round(style.shadowBlur * SHADOW_BLUR * 100) / 100;
+
+  // Name, font, size, colours, bold, italic, underline, strikeout, scale x/y, spacing, angle, border style, outline, shadow, alignment, margins, encoding.
+  const styleLine = (name: string, primary: string, outlineColor: string, borderStyle: number, outline: number) =>
+    `Style: ${name},${font.assFamily},${size},${primary},${primary},${outlineColor},${assStyleColor('#000000', 0xff)},${font.bold ? -1 : 0},${font.italic ? -1 : 0},${style.underline ? -1 : 0},0,100,100,${style.letterSpacing},0,${borderStyle},${outline},0,5,0,0,0,1`;
 
   const header = [
     '[Script Info]',
@@ -98,8 +108,9 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Sub,${font.assFamily},${size},${assStyleColor(style.textColor)},${assStyleColor(style.highlightColor)},${assStyleColor(style.outlineColor)},${assStyleColor('#000000', 0x80)},${font.bold ? -1 : 0},${font.italic ? -1 : 0},0,0,100,100,0,0,1,${style.outlineWidth},${style.shadow},5,0,0,0,1`,
-    ...boxLine,
+    styleLine('Sub', assStyleColor(style.textColor), assStyleColor(style.outlineColor), 1, style.outlineWidth),
+    // Same font and size, drawn as an opaque box under the text: its fill is invisible and the box only shows on the active word.
+    ...(boxed ? [styleLine('Box', assStyleColor(style.textColor, 0xff), assStyleColor(style.highlightColor), 3, 0)] : []),
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -111,16 +122,23 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
     if (duration < 0.005) continue;
     const { inDur, outDur } = animTimes(style, duration);
     const inMs = ms(inDur);
-
-    // Block-level entrance.
-    const lead = ['\\an5'];
     const off = slideOffset(anim);
-    if (inMs && (off.x || off.y)) lead.push(`\\move(${x + off.x},${y + off.y},${x},${y},0,${inMs})`);
-    else lead.push(`\\pos(${x},${y})`);
-    const fadeIn = inMs && anim !== 'pop' ? inMs : 0;
-    if (fadeIn || outDur) lead.push(`\\fad(${fadeIn},${ms(outDur)})`);
-    if (inMs && anim === 'rotate') lead.push(`\\frz14\\t(0,${inMs},\\frz0)`);
-    if (inMs && anim === 'blur') lead.push(`\\blur14\\t(0,${inMs},\\blur0)`);
+
+    /** Position, fades and whole-block entrance of one layer, shifted by (dx, dy) and with its own blur. */
+    const lead = (dx: number, dy: number, blur: number) => {
+      const px = Math.round(x + dx);
+      const py = Math.round(y + dy);
+      const tags = ['\\an5'];
+      if (inMs && (off.x || off.y)) tags.push(`\\move(${px + off.x},${py + off.y},${px},${py},0,${inMs})`);
+      else tags.push(`\\pos(${px},${py})`);
+      const fadeIn = inMs && anim !== 'pop' ? inMs : 0;
+      if (fadeIn || outDur) tags.push(`\\fad(${fadeIn},${ms(outDur)})`);
+      if (inMs && anim === 'rotate') tags.push(`\\frz14\\t(0,${inMs},\\frz0)`);
+      if (inMs && anim === 'blur') tags.push(`\\blur${14 + blur}\\t(0,${inMs},\\blur${blur})`);
+      else if (blur > 0) tags.push(`\\blur${blur}`);
+      return tags.join('');
+    };
+
     // Scale entrances are repeated in every word, because words also set their own scale.
     let grow = '';
     if (inMs && anim === 'zoom') grow = `\\fscx60\\fscy60\\t(0,${inMs},\\fscx100\\fscy100)`;
@@ -132,12 +150,8 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
     const letters = page.words.reduce((n, w) => n + [...w.text].filter((c) => c !== ' ').length, 0);
     const step = letterStep(letters, duration);
 
-    /**
-     * The text of the block for one of the two layers. `box` builds the layer
-     * under the text: the same words with the same sizes (so libass lays them
-     * out identically) but invisible, with a box that shows on the active word.
-     */
-    const layer = (box: boolean) => {
+    /** The words of the block for one of the layers; the three share sizes so libass lays them out identically. */
+    const layer = (kind: 'text' | 'box' | 'shadow') => {
       let letter = 0;
       return page.lines
         .map((line) =>
@@ -152,18 +166,25 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
               const grows = big ? `\\t(${Math.max(on, inMs, 1)},${Math.max(on, inMs, 1)},\\fscx${scale}\\fscy${scale})` : '';
               const shrinks = big ? '\\fscx100\\fscy100' : '';
               let tags: string;
-              if (box) {
+              if (kind === 'box') {
                 tags = `${grow}\\3a&HFF&${from('\\3a&H00&')}${grows}\\t(${offAt},${offAt},\\3a&HFF&${shrinks})`;
+              } else if (kind === 'shadow') {
+                // A copy of the word in the shadow colour. Words still to come cast a fainter shadow, and the word in a box none.
+                const solid = `\\1a${shadowAlpha}\\3a${shadowAlpha}`;
+                tags = `${grow}\\1c${shadowColor}\\3c${shadowColor}`;
+                tags += dim ? `\\1a${alpha(style.shadowOpacity * DIM_OPACITY)}\\3a${alpha(style.shadowOpacity * DIM_OPACITY)}${from(solid)}` : solid;
+                if (boxed) tags += from('\\1a&HFF&\\3a&HFF&');
+                tags += grows;
+                if (boxed || big) tags += `\\t(${offAt},${offAt},${boxed ? solid : ''}${shrinks})`;
               } else {
                 tags = `${grow}\\1c${base}`;
-                // Words still to come are faded; fill, outline and shadow have their own alpha.
-                if (dim)
-                  tags += `\\1a${alpha(DIM_OPACITY)}\\3a${alpha(DIM_OPACITY)}\\4a${alpha(DIM_OPACITY / 2)}${from('\\1a&H00&\\3a&H00&\\4a&H80&')}`;
+                // Words still to come are faded.
+                if (dim) tags += `\\1a${alpha(DIM_OPACITY)}\\3a${alpha(DIM_OPACITY)}${from('\\1a&H00&\\3a&H00&')}`;
                 if (style.highlight) {
-                  // In a box the word takes the box's text colour and loses its outline and shadow.
-                  tags += from(boxed ? `\\1c${boxText}\\3a&HFF&\\4a&HFF&` : `\\1c${hl}`);
+                  // In a box the word takes the box's text colour and loses its outline.
+                  tags += from(boxed ? `\\1c${boxText}\\3a&HFF&` : `\\1c${hl}`);
                   tags += grows;
-                  tags += `\\t(${offAt},${offAt},\\1c${base}${boxed ? '\\3a&H00&\\4a&H80&' : ''}${shrinks})`;
+                  tags += `\\t(${offAt},${offAt},\\1c${base}${boxed ? '\\3a&H00&' : ''}${shrinks})`;
                 }
               }
               let body = escapeText(word.text);
@@ -172,8 +193,9 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
                   .map((ch) => {
                     if (ch === ' ') return ch;
                     const at = ms(letter++ * step);
-                    // The box layer only follows the sizes of the letters; it is never made visible letter by letter.
-                    const show = box ? '' : at <= 0 ? '\\alpha&H00&' : `\\alpha&HFF&\\t(${at},${at},\\alpha&H00&)`;
+                    // The box layer only follows the sizes of the letters; the shadow appears with each letter, at its own opacity.
+                    const visible = kind === 'shadow' ? `\\1a${shadowAlpha}\\3a${shadowAlpha}` : '\\alpha&H00&';
+                    const show = kind === 'box' ? '' : at <= 0 ? visible : `\\alpha&HFF&\\t(${at},${at},${visible})`;
                     if (anim === 'typewriter') return show ? `{${show}}${ch}` : ch;
                     const large = Math.round(DROP_SCALE * 100);
                     return `{${show}\\fscx${large}\\fscy${large}\\t(${at},${at + ms(LETTER_SETTLE)},\\fscx100\\fscy100)}${ch}`;
@@ -181,7 +203,7 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
                   .join('');
               }
               // The box must not stretch over the space that follows the word.
-              return box ? `{${tags}}${body}{\\3a&HFF&}` : `{${tags}}${body}`;
+              return kind === 'box' ? `{${tags}}${body}{\\3a&HFF&}` : `{${tags}}${body}`;
             })
             .join(' '),
         )
@@ -189,11 +211,12 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
     };
 
     const times = `${assTime(page.start)},${assTime(page.end)}`;
+    if (shadowed) events.push(`Dialogue: 0,${times},Sub,,0,0,0,,{${lead(shade.dx, shade.dy, shadowBlur)}}${layer('shadow')}`);
     if (boxed) {
       const pad = `\\xbord${Math.round(style.fontSize * BOX_PAD_X)}\\ybord${Math.round(style.fontSize * BOX_PAD_Y)}`;
-      events.push(`Dialogue: 0,${times},Box,,0,0,0,,{${lead.join('')}${pad}}${layer(true)}`);
+      events.push(`Dialogue: 1,${times},Box,,0,0,0,,{${lead(0, 0, 0)}${pad}}${layer('box')}`);
     }
-    events.push(`Dialogue: 1,${times},Sub,,0,0,0,,{${lead.join('')}}${layer(false)}`);
+    events.push(`Dialogue: 2,${times},Sub,,0,0,0,,{${lead(0, 0, 0)}}${layer('text')}`);
   }
   return [...header, ...events, ''].join('\n');
 }

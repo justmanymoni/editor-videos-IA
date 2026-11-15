@@ -5,6 +5,7 @@
  * text looks identical in both.
  */
 import type { TextItem } from '@/lib/shared/types';
+import { shadowOffset } from '@/lib/shared/types';
 import { cssFamily, getFont } from '@/lib/shared/fonts';
 import { layoutCurve } from '@/lib/shared/text-curve';
 
@@ -26,6 +27,9 @@ const fontOf = (item: TextItem) => `${item.fontSize}px "${cssFamily(getFont(item
 export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio = 1): { width: number; height: number } {
   const ctx = canvas.getContext('2d')!;
   ctx.font = fontOf(item);
+  const spacing = item.letterSpacing || 0;
+  // Straight lines are spaced by the canvas itself; along a curve every letter is placed one by one.
+  ctx.letterSpacing = item.curve === 'none' ? `${spacing}px` : '0px';
   const size = item.fontSize;
   let glyphs: Glyph[];
   let halfW: number;
@@ -47,7 +51,7 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
   } else {
     const chars = [...item.text.replace(/\s*\n\s*/g, ' ')];
     const positions = layoutCurve(
-      chars.map((c) => ctx.measureText(c).width),
+      chars.map((c) => ctx.measureText(c).width + spacing),
       item.curve,
       item.curveAmount,
       size,
@@ -57,7 +61,8 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
     halfW = Math.max(reach, ...positions.map((p) => Math.abs(p.x) + reach));
     halfH = Math.max(reach, ...positions.map((p) => Math.abs(p.y) + reach));
   }
-  const pad = item.outlineWidth + item.shadow + 4;
+  const shadowed = item.shadowOn && item.shadowOpacity > 0 && (item.shadow > 0 || item.shadowBlur > 0);
+  const pad = item.outlineWidth + (shadowed ? item.shadow + item.shadowBlur * 2 : 0) + 4;
   halfW += pad;
   halfH += pad;
   const rot = (item.rotation * Math.PI) / 180;
@@ -74,6 +79,7 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
     c.rotate(rot);
     c.scale(item.scale, item.scale);
     c.font = fontOf(item);
+    c.letterSpacing = item.curve === 'none' ? `${spacing}px` : '0px';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
@@ -98,16 +104,20 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
     }
   };
 
-  if (item.shadow > 0) {
-    // Shadow = the whole shape in black at 50 %, shifted down-right (drawn once so it stays even).
+  if (shadowed) {
+    // Shadow = the whole shape in the shadow colour, shifted, blurred and see-through (drawn once so it stays even).
     const mask = document.createElement('canvas');
     mask.width = canvas.width;
     mask.height = canvas.height;
-    draw(mask.getContext('2d')!, '#000', '#000', '#000');
+    draw(mask.getContext('2d')!, item.shadowColor, item.shadowColor, item.shadowColor);
+    const k = item.scale * pixelRatio;
+    const { dx, dy } = shadowOffset(item.shadow, item.shadowAngle);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 0.5;
-    const shift = item.shadow * item.scale * pixelRatio;
-    ctx.drawImage(mask, shift, shift);
+    ctx.globalAlpha = Math.min(1, Math.max(0, item.shadowOpacity));
+    // Half the radius: the same softness as a CSS text-shadow of that blur.
+    if (item.shadowBlur > 0) ctx.filter = `blur(${(item.shadowBlur * k) / 2}px)`;
+    ctx.drawImage(mask, dx * k, dy * k);
+    ctx.filter = 'none';
     ctx.globalAlpha = 1;
   }
   draw(ctx, item.color, item.outlineColor, item.bgColor);

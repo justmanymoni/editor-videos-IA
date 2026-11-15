@@ -427,3 +427,24 @@ export function searchFonts(query: string): SubtitleFont[] {
     return words.every((w) => haystack.includes(w));
   });
 }
+
+const WEIGHT_SUFFIX = /-(regular|bold|extrabold|semibold|black|italic)$/;
+const BOLD_SUFFIX = /-(bold|extrabold|semibold|black)$/;
+/** Fonts of the same family share what comes before the weight: "montserrat-bold" → "montserrat". */
+export const fontFamilyKey = (id: string) => id.replace(WEIGHT_SUFFIX, '');
+export const isBoldFont = (font: SubtitleFont) => !!font.bold || BOLD_SUFFIX.test(font.id);
+
+/**
+ * The font of the same family with bold or italic switched on or off (the
+ * "B" and "I" buttons), or null when the catalogue has no such variant.
+ */
+export function fontVariant(id: string, change: { bold?: boolean; italic?: boolean }): string | null {
+  const current = getFont(id);
+  const family = SUBTITLE_FONTS.filter((f) => fontFamilyKey(f.id) === fontFamilyKey(id));
+  const bold = change.bold ?? (change.italic ? false : isBoldFont(current));
+  const italic = change.italic ?? false;
+  // "-bold" before the heavier weights, so B gives the normal bold.
+  const order = (f: SubtitleFont) => (f.id.endsWith('-bold') ? 0 : 1);
+  const match = family.filter((f) => isBoldFont(f) === bold && !!f.italic === italic).sort((a, b) => order(a) - order(b))[0];
+  return match && match.id !== id ? match.id : null;
+}

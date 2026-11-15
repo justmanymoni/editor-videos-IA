@@ -12,8 +12,15 @@ export interface SubtitlePreset {
   style: Partial<SubtitleStyle>;
 }
 
+/** The look before shadows could be adjusted: thick black outline and a hard shadow. */
+const OUTLINED = { fontId: 'montserrat-black', outlineWidth: 6, shadowOn: true, shadow: 6, shadowBlur: 0, shadowOpacity: 0.5 } as const;
+/** A hard shadow of the given size, or none. */
+const hard = (shadow: number) => ({ shadowOn: shadow > 0, shadow, shadowBlur: 0, shadowOpacity: 0.5 });
+
 export const SUBTITLE_PRESETS: SubtitlePreset[] = [
-  { id: 'amarillo', name: 'Amarillo', style: {} },
+  // The default: Montserrat without outline, with a soft shadow.
+  { id: 'montserrat', name: 'Montserrat', style: {} },
+  { id: 'amarillo', name: 'Amarillo', style: { ...OUTLINED } },
   {
     id: 'limpio',
     name: 'Limpio',
@@ -21,8 +28,8 @@ export const SUBTITLE_PRESETS: SubtitlePreset[] = [
       fontId: 'montserrat-bold',
       fontSize: 68,
       outlineWidth: 4,
-      shadow: 2,
-      uppercase: false,
+      ...hard(2),
+      textCase: 'none',
       highlight: false,
       wordsPerPage: 4,
       maxCharsPerLine: 20,
@@ -35,20 +42,24 @@ export const SUBTITLE_PRESETS: SubtitlePreset[] = [
       fontId: 'playfair-italic',
       fontSize: 78,
       outlineWidth: 3,
-      shadow: 3,
-      uppercase: false,
+      ...hard(3),
+      textCase: 'none',
       highlight: false,
       wordsPerPage: 5,
       maxCharsPerLine: 24,
     },
   },
-  { id: 'titular', name: 'Titular', style: { fontId: 'anton', fontSize: 110, outlineWidth: 5, shadow: 0, maxCharsPerLine: 14 } },
+  { id: 'titular', name: 'Titular', style: { fontId: 'anton', fontSize: 110, outlineWidth: 5, ...hard(0), maxCharsPerLine: 14 } },
   {
     id: 'pop',
     name: 'Pop',
-    style: { fontId: 'luckiest-guy', fontSize: 96, outlineWidth: 7, shadow: 6, wordsPerPage: 2, activeScale: 1.12, animationIn: 'pop' },
+    style: { fontId: 'luckiest-guy', fontSize: 96, outlineWidth: 7, ...hard(6), wordsPerPage: 2, activeScale: 1.12, animationIn: 'pop' },
   },
-  { id: 'una-palabra', name: 'Una palabra', style: { fontSize: 120, wordsPerPage: 1, outlineWidth: 8, shadow: 5, animationIn: 'zoom' } },
+  {
+    id: 'una-palabra',
+    name: 'Una palabra',
+    style: { fontId: 'montserrat-black', fontSize: 120, wordsPerPage: 1, outlineWidth: 8, ...hard(7), animationIn: 'zoom' },
+  },
   {
     id: 'caja',
     name: 'Caja',
@@ -56,8 +67,8 @@ export const SUBTITLE_PRESETS: SubtitlePreset[] = [
       fontId: 'montserrat-bold',
       fontSize: 66,
       outlineWidth: 0,
-      shadow: 3,
-      uppercase: false,
+      ...hard(3),
+      textCase: 'none',
       highlightBox: true,
       highlightColor: '#FF6B35',
       boxTextColor: '#111111',
@@ -74,7 +85,7 @@ export const SUBTITLE_PRESETS: SubtitlePreset[] = [
       fontId: 'poppins-extrabold',
       fontSize: 78,
       outlineWidth: 5,
-      shadow: 3,
+      ...hard(3),
       dimUpcoming: true,
       highlightColor: '#3DFF8B',
       wordsPerPage: 4,
@@ -88,7 +99,7 @@ export const SUBTITLE_PRESETS: SubtitlePreset[] = [
       fontId: 'anton',
       fontSize: 104,
       outlineWidth: 5,
-      shadow: 0,
+      ...hard(0),
       highlightBox: true,
       highlightColor: '#FFE600',
       boxTextColor: '#000000',

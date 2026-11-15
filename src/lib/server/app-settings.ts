@@ -18,9 +18,10 @@ export function sanitizeAppSettings(raw: Partial<AppSettings> | null | undefined
   return {
     language: typeof r.language === 'string' && /^[a-z]{2,8}$/.test(r.language) ? r.language : base.language,
     autoSilence: typeof r.autoSilence === 'boolean' ? r.autoSilence : base.autoSilence,
-    silenceMin: Number.isFinite(silence) ? Math.min(2, Math.max(0.2, Math.round(silence * 100) / 100)) : base.silenceMin,
+    silenceMin: Number.isFinite(silence) ? Math.min(3, Math.max(0.2, Math.round(silence * 100) / 100)) : base.silenceMin,
     fitMode: r.fitMode === 'cover' || r.fitMode === 'blur' ? r.fitMode : base.fitMode,
     subtitlePreset: SUBTITLE_PRESETS.some((p) => p.id === r.subtitlePreset) ? r.subtitlePreset! : base.subtitlePreset,
+    autoSubtitles: typeof r.autoSubtitles === 'boolean' ? r.autoSubtitles : base.autoSubtitles,
     exportQuality: r.exportQuality === 'fast' || r.exportQuality === 'normal' || r.exportQuality === 'high' ? r.exportQuality : base.exportQuality,
   };
 }

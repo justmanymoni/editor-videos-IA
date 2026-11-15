@@ -12,9 +12,10 @@ import {
   type ItemKind,
   type ItemPatch,
 } from '@/lib/client/actions';
-import { Button, ColorField, Row, Section, Segmented, SliderRow, Toggle } from '@/components/ui';
+import { Button, CheckSection, ColorField, Row, Section, Segmented, SliderRow } from '@/components/ui';
 import { TranscriptStatus } from './ToolsPanel';
 import { FontPicker } from './FontPicker';
+import { DesignButtons, ShadowControls } from './SubtitleStylePanel';
 import { SHAPES, SHAPE_OPTIONS, type TextShape } from './TextTab';
 
 /**
@@ -100,70 +101,90 @@ function Position({ kind, items }: { kind: ItemKind; items: { id: string; x?: nu
 }
 
 /** Font, colours, size, rotation and shape of one or several texts. */
-function TextStyle({ items }: { items: TextItem[] }) {
+function TextStyle({ items, title = 'Estilo' }: { items: TextItem[]; title?: string }) {
   const item = items[0];
   const set = (patch: Partial<TextItem>, key?: string) => patchAll('text', items, patch, key);
   const shape: TextShape = item.curve === 'none' ? 'none' : item.curve === 'wave' ? 'wave' : Math.abs(item.curveAmount) >= 100 ? 'circle' : 'arc';
   return (
     <>
-      <Row label="Fuente">
-        <FontPicker value={item.fontId} onChange={(v) => set({ fontId: v }, 'font')} />
-      </Row>
-      <Row label="Color">
-        <ColorField value={item.color} onChange={(v) => set({ color: v }, 'color')} />
-      </Row>
-      <Row label="Contorno">
-        <ColorField value={item.outlineColor} onChange={(v) => set({ outlineColor: v }, 'ocolor')} />
-      </Row>
-      <SliderRow label="Grosor contorno" value={item.outlineWidth} min={0} max={24} onChange={(v) => set({ outlineWidth: v }, 'ow')} />
-      <SliderRow label="Sombra" value={item.shadow} min={0} max={24} onChange={(v) => set({ shadow: v }, 'shadow')} />
-      <Toggle
-        label="Fondo (caja detrás del texto)"
-        checked={!!item.bgColor}
-        onChange={(v) => set(v ? { bgColor: '#FFE600', color: '#000000', outlineWidth: 0, shadow: 0 } : { bgColor: '' })}
-      />
-      {item.bgColor && (
-        <>
-          <Row label="Color del fondo">
-            <ColorField value={item.bgColor} onChange={(v) => set({ bgColor: v }, 'bg')} />
-          </Row>
-          <SliderRow
-            label="Esquinas"
-            value={item.bgRadius}
-            min={0}
-            max={1}
-            step={0.05}
-            scale={100}
-            unit="%"
-            onChange={(v) => set({ bgRadius: v }, 'bgr')}
-          />
-          <SliderRow
-            label="Margen"
-            value={item.bgPadding}
-            min={0}
-            max={1}
-            step={0.05}
-            scale={100}
-            unit="%"
-            onChange={(v) => set({ bgPadding: v }, 'bgp')}
-          />
-          {item.curve !== 'none' && <p className="text-[11px] text-faint">El fondo solo se dibuja en textos rectos.</p>}
-        </>
-      )}
-      <SliderRow label="Tamaño" value={item.scale} min={0.2} max={4} step={0.02} scale={100} unit="%" onChange={(v) => set({ scale: v }, 'scale')} />
-      <SliderRow label="Giro" value={item.rotation} min={-180} max={180} unit="°" onChange={(v) => set({ rotation: v }, 'rot')} />
-      <Row label="Forma">
-        <Segmented value={shape} onChange={(v) => set(SHAPES[v])} options={SHAPE_OPTIONS} />
-      </Row>
-      {item.curve !== 'none' && (
+      <Section title={title}>
+        <Row label="Fuente">
+          <FontPicker value={item.fontId} onChange={(v) => set({ fontId: v }, 'font')} />
+        </Row>
         <SliderRow
-          label={item.curve === 'wave' ? 'Altura' : 'Curvatura'}
-          value={item.curveAmount}
-          min={-100}
-          max={100}
-          onChange={(v) => set({ curveAmount: v }, 'curve')}
+          label="Tamaño"
+          value={item.scale}
+          min={0.2}
+          max={4}
+          step={0.02}
+          scale={100}
+          unit="%"
+          onChange={(v) => set({ scale: v }, 'scale')}
         />
-      )}
+        <Row label="Diseño">
+          <DesignButtons fontId={item.fontId} onFont={(v) => set({ fontId: v }, 'font')} />
+        </Row>
+        <Row label="Color">
+          <ColorField value={item.color} onChange={(v) => set({ color: v }, 'color')} />
+        </Row>
+        <SliderRow label="Carácter" value={item.letterSpacing} min={-10} max={60} onChange={(v) => set({ letterSpacing: v }, 'ls')} />
+        <SliderRow label="Giro" value={item.rotation} min={-180} max={180} unit="°" onChange={(v) => set({ rotation: v }, 'rot')} />
+      </Section>
+
+      <CheckSection title="Trazo" checked={item.outlineWidth > 0} onChange={(v) => set({ outlineWidth: v ? 6 : 0 })}>
+        <Row label="Color">
+          <ColorField value={item.outlineColor} onChange={(v) => set({ outlineColor: v }, 'ocolor')} />
+        </Row>
+        <SliderRow label="Grosor" value={item.outlineWidth} min={1} max={24} onChange={(v) => set({ outlineWidth: v }, 'ow')} />
+      </CheckSection>
+
+      <CheckSection
+        title="Fondo"
+        checked={!!item.bgColor}
+        onChange={(v) => set(v ? { bgColor: '#FFE600', color: '#000000', outlineWidth: 0, shadowOn: false } : { bgColor: '' })}
+      >
+        <Row label="Color">
+          <ColorField value={item.bgColor || '#FFE600'} onChange={(v) => set({ bgColor: v }, 'bg')} />
+        </Row>
+        <SliderRow
+          label="Esquinas"
+          value={item.bgRadius}
+          min={0}
+          max={1}
+          step={0.05}
+          scale={100}
+          unit="%"
+          onChange={(v) => set({ bgRadius: v }, 'bgr')}
+        />
+        <SliderRow
+          label="Margen"
+          value={item.bgPadding}
+          min={0}
+          max={1}
+          step={0.05}
+          scale={100}
+          unit="%"
+          onChange={(v) => set({ bgPadding: v }, 'bgp')}
+        />
+        {item.curve !== 'none' && <p className="text-[11px] text-faint">El fondo solo se dibuja en textos rectos.</p>}
+      </CheckSection>
+
+      <CheckSection title="Sombra" checked={item.shadowOn} onChange={(v) => set({ shadowOn: v })}>
+        <ShadowControls value={item} set={set} />
+      </CheckSection>
+
+      <Section title="Forma">
+        <Segmented value={shape} onChange={(v) => set(SHAPES[v])} options={SHAPE_OPTIONS} />
+        {item.curve !== 'none' && (
+          <SliderRow
+            label={item.curve === 'wave' ? 'Altura' : 'Curvatura'}
+            value={item.curveAmount}
+            min={-100}
+            max={100}
+            onChange={(v) => set({ curveAmount: v }, 'curve')}
+          />
+        )}
+      </Section>
     </>
   );
 }
@@ -183,8 +204,8 @@ function TextProps({ item }: { item: TextItem }) {
             <Scissors size={12} /> Dividir en bloques por las barras /
           </Button>
         )}
-        <TextStyle items={[item]} />
       </Section>
+      <TextStyle items={[item]} />
       <Section title="Posición y tiempo">
         <Position kind="text" items={[item]} />
         <Timing kind="text" item={item} />
@@ -307,10 +328,12 @@ function MultiProps({ refs }: { refs: SelRef[] }) {
         <DeleteButton label="Eliminar todo lo seleccionado" />
       </Section>
       {texts.length > 0 && (
-        <Section title={`Textos (${texts.length})`}>
-          <TextStyle items={texts} />
-          <Position kind="text" items={texts} />
-        </Section>
+        <>
+          <TextStyle items={texts} title={`Textos (${texts.length})`} />
+          <Section title="Posición de los textos">
+            <Position kind="text" items={texts} />
+          </Section>
+        </>
       )}
       {overlays.length > 0 && (
         <Section title={`Superposiciones (${overlays.length})`}>

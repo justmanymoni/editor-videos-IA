@@ -312,13 +312,13 @@ function MediaTab() {
           className="group flex cursor-grab gap-2.5 rounded-lg border border-line bg-panel-2 p-2 active:cursor-grabbing"
         >
           <div className="relative shrink-0">
-            <Thumb media={m} className="h-[72px] w-[54px]" />
+            <Thumb media={m} className="h-[64px] w-[48px]" />
             {used.has(m.id) && <span className="absolute top-0.5 left-0.5 rounded bg-black/75 px-1 text-[9px] font-medium text-accent">Añadido</span>}
           </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-1" title={m.name}>
             <div className="flex items-start justify-between gap-1">
-              <p className="truncate text-xs font-medium" title={m.name}>
-                {m.name}
+              <p className="truncate text-xs font-medium tabular-nums">
+                {m.kind === 'image' ? 'Foto' : formatTime(m.duration, false)} · {m.width}×{m.height} · {formatBytes(m.size)}
               </p>
               <div className="-mt-1 -mr-1 flex shrink-0">
                 <IconButton
@@ -348,20 +348,9 @@ function MediaTab() {
                 </IconButton>
               </div>
             </div>
-            <p className="text-[11px] text-muted tabular-nums">
-              {m.kind === 'image' ? 'Foto' : formatTime(m.duration, false)} · {m.width}×{m.height} · {formatBytes(m.size)}
-            </p>
             <MediaStatus media={m} />
-            {m.kind === 'video' && <TranscriptStatus media={m} />}
-            {m.kind === 'video' && m.hasAudio && m.status !== 'error' && (
-              <button
-                className="flex items-center gap-1 self-start text-[11px] text-muted hover:text-accent"
-                onClick={() => useEditor.getState().set({ inspectorTab: 'audio' })}
-                title="Los ajustes de voz y música están en la pestaña Audio, a la derecha"
-              >
-                <AudioLines size={11} /> Voz y música
-              </button>
-            )}
+            {/* Only while something is happening: a finished transcript needs no line of its own. */}
+            {m.kind === 'video' && m.hasAudio && m.transcript.status !== 'done' && m.transcript.status !== 'none' && <TranscriptStatus media={m} />}
           </div>
         </div>
       ))}

@@ -79,7 +79,7 @@ describe.skipIf(!hasFfmpeg)('subtitle rendering (libass)', () => {
   mkdirSync(path.join(dir, 'fonts'));
   const font = getFont(DEFAULT_SUBTITLE_STYLE.fontId).file;
   copyFileSync(path.join(process.cwd(), 'public', 'fonts', font), path.join(dir, 'fonts', font));
-  const style = { ...DEFAULT_SUBTITLE_STYLE, maxCharsPerLine: 30, fontSize: 70, shadow: 0 };
+  const style = { ...DEFAULT_SUBTITLE_STYLE, maxCharsPerLine: 30, fontSize: 70, shadowOn: false };
 
   it('highlights exactly the word being spoken', () => {
     const first = frameStats(dir, style, 1.2);

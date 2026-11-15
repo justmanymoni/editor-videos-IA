@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_SUBTITLE_STYLE } from '@/lib/shared/types';
+import { DEFAULT_SUBTITLE_STYLE, DEFAULT_TEXT, normalizeSubtitleStyle, shadowOffset } from '@/lib/shared/types';
 import { activeAt, buildPages, subtitleText, type SubWord } from '@/lib/shared/subtitles';
 import { assInlineColor, assStyleColor, assTime, buildAss } from '@/lib/shared/ass';
-import { SUBTITLE_FONTS, assFontSize, getFont } from '@/lib/shared/fonts';
+import { SUBTITLE_FONTS, assFontSize, fontVariant, getFont, isBoldFont } from '@/lib/shared/fonts';
 import { readFontInfo } from '@/lib/server/ttf';
 
 const sw = (text: string, start: number, end: number, extra: Partial<SubWord> = {}): SubWord => ({
@@ -20,7 +20,7 @@ const sw = (text: string, start: number, end: number, extra: Partial<SubWord> = 
 describe('subtitle pages', () => {
   it('formats text', () => {
     expect(subtitleText('¿qué tal?', DEFAULT_SUBTITLE_STYLE)).toBe('QUÉ TAL');
-    expect(subtitleText('hola,', { uppercase: false, stripPunctuation: false })).toBe('hola,');
+    expect(subtitleText('hola,', { textCase: 'none', stripPunctuation: false })).toBe('hola,');
   });
 
   it('groups words per page, breaking on punctuation, pauses and forced breaks', () => {
@@ -56,7 +56,7 @@ describe('ASS export', () => {
 
   it('emits one event per block and recolours the spoken word with timed transforms', () => {
     const pages = buildPages([sw('HOLA', 1, 1.4), sw('MUNDO', 1.5, 2)], { wordsPerPage: 3, maxCharsPerLine: 16 });
-    const ass = buildAss(pages, DEFAULT_SUBTITLE_STYLE);
+    const ass = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, shadowOn: false });
     const events = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
     expect(events).toHaveLength(1);
     expect(events[0]).toContain('0:00:01.00,0:00:02.35');
@@ -64,7 +64,49 @@ describe('ASS export', () => {
     // First word: yellow from the start, white again when the second word starts (500 ms in).
     expect(events[0]).toContain('{\\1c&HFFFFFF&\\1c&H00E6FF&\\t(500,500,\\1c&HFFFFFF&)}HOLA');
     expect(events[0]).toContain('{\\1c&HFFFFFF&\\t(500,500,\\1c&H00E6FF&)\\t(1350,1350,\\1c&HFFFFFF&)}MUNDO');
-    expect(ass).toContain(`Style: Sub,Montserrat Black,${Math.round(assFontSize(getFont('montserrat-black'), 86) * 100) / 100},`);
+    // Montserrat (bold), without outline or libass shadow.
+    expect(ass).toContain(`Style: Sub,Montserrat,${Math.round(assFontSize(getFont('montserrat-bold'), 86) * 100) / 100},`);
+    expect(ass).toMatch(/Style: Sub,.*,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1$/m);
+  });
+
+  it('draws the shadow as its own layer: shifted, blurred and see-through', () => {
+    const pages = buildPages([sw('HOLA', 1, 1.4), sw('MUNDO', 1.5, 2)], { wordsPerPage: 3, maxCharsPerLine: 16 });
+    const style = {
+      ...DEFAULT_SUBTITLE_STYLE,
+      shadowOn: true,
+      shadow: 10,
+      shadowAngle: -90,
+      shadowBlur: 12,
+      shadowOpacity: 0.5,
+      shadowColor: '#102030',
+    };
+    const events = buildAss(pages, style)
+      .split('\n')
+      .filter((l) => l.startsWith('Dialogue:'));
+    expect(events).toHaveLength(2);
+    const [shadow, text] = events;
+    expect(shadow.startsWith('Dialogue: 0,')).toBe(true);
+    expect(text.startsWith('Dialogue: 2,')).toBe(true);
+    // −90° is straight down: same x, 10 px lower; blur 12 px → strength 6.
+    expect(shadow).toContain('{\\an5\\pos(540,1392)\\blur6}');
+    expect(text).toContain('{\\an5\\pos(540,1382)}');
+    // Shadow colour (BGR) at 50 %; the words never take the highlight colour.
+    expect(shadow).toContain('\\1c&H302010&\\3c&H302010&\\1a&H80&\\3a&H80&');
+    expect(shadow).not.toContain('&H00E6FF&');
+    // No shadow when it is off or fully transparent.
+    for (const off of [{ shadowOn: false }, { shadowOpacity: 0 }, { shadow: 0, shadowBlur: 0 }]) {
+      expect(
+        buildAss(pages, { ...style, ...off })
+          .split('\n')
+          .filter((l) => l.startsWith('Dialogue:')),
+      ).toHaveLength(1);
+    }
+  });
+
+  it('writes letter spacing and underline in the style', () => {
+    const pages = buildPages([sw('HOLA', 1, 1.4)], { wordsPerPage: 3, maxCharsPerLine: 16 });
+    const ass = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, letterSpacing: 7, underline: true, outlineWidth: 4 });
+    expect(ass).toMatch(/Style: Sub,.*,-1,0,-1,0,100,100,7,0,1,4,0,5,0,0,0,1$/m);
   });
 
   it('writes entrance animations and can turn the highlight off', () => {
@@ -106,8 +148,8 @@ describe('highlight box and dimmed words in ASS', () => {
     const boxed = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, highlightBox: true, boxTextColor: '#102030' });
     const lines = boxed.split('\n');
     expect(lines.filter((l) => l.startsWith('Style: Box,')).length).toBe(1);
-    const box = lines.find((l) => l.startsWith('Dialogue: 0,') && l.includes(',Box,'))!;
-    const text = lines.find((l) => l.startsWith('Dialogue: 1,') && l.includes(',Sub,'))!;
+    const box = lines.find((l) => l.startsWith('Dialogue: 1,') && l.includes(',Box,'))!;
+    const text = lines.find((l) => l.startsWith('Dialogue: 2,') && l.includes(',Sub,'))!;
     expect(box).toBeTruthy();
     expect(text).toBeTruthy();
     // Same position in both layers, and padding only on the box.
@@ -128,8 +170,59 @@ describe('highlight box and dimmed words in ASS', () => {
   it('fades the words that have not been said yet', () => {
     const dim = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, dimUpcoming: true });
     expect(dim).toContain('\\1a&H99&');
-    expect(dim).toContain('\\t(500,500,\\1a&H00&\\3a&H00&\\4a&H80&)');
+    expect(dim).toContain('\\t(500,500,\\1a&H00&\\3a&H00&)');
     // Letter animations reveal the text themselves.
     expect(buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, dimUpcoming: true, animationIn: 'typewriter' })).not.toContain('\\1a&H99&');
+  });
+});
+
+describe('style of the text', () => {
+  it('changes the case of the words', () => {
+    expect(subtitleText('Hola, Mundo', { textCase: 'upper', stripPunctuation: true })).toBe('HOLA MUNDO');
+    expect(subtitleText('HOLA', { textCase: 'lower', stripPunctuation: true })).toBe('hola');
+    expect(subtitleText('¿qué TAL?', { textCase: 'title', stripPunctuation: false })).toBe('¿Qué tal?');
+    expect(subtitleText('Hola', { textCase: 'none', stripPunctuation: true })).toBe('Hola');
+  });
+
+  it('starts as Montserrat without outline and with a soft shadow', () => {
+    expect(DEFAULT_SUBTITLE_STYLE).toMatchObject({ fontId: 'montserrat-bold', outlineWidth: 0, shadowOn: true });
+    expect(DEFAULT_SUBTITLE_STYLE.shadowBlur).toBeGreaterThan(0);
+    expect(DEFAULT_TEXT).toMatchObject({ fontId: 'montserrat-bold', outlineWidth: 0, shadowOn: true });
+  });
+
+  it('keeps the look of projects saved before the shadow could be adjusted', () => {
+    const old = normalizeSubtitleStyle({ fontId: 'montserrat-black', outlineWidth: 6, shadow: 4, uppercase: false } as never);
+    expect(old).toMatchObject({
+      fontId: 'montserrat-black',
+      outlineWidth: 6,
+      shadowOn: true,
+      shadowBlur: 0,
+      shadowOpacity: 0.5,
+      shadowAngle: -45,
+      textCase: 'none',
+    });
+    expect(old.shadow).toBeCloseTo(5.7, 1); // 4 px right and 4 px down
+    expect(normalizeSubtitleStyle({ shadow: 0, uppercase: true } as never)).toMatchObject({ shadowOn: false, textCase: 'upper' });
+    // A style saved by this version is left alone.
+    const now = normalizeSubtitleStyle({ ...DEFAULT_SUBTITLE_STYLE, shadow: 9, shadowBlur: 3, textCase: 'title' });
+    expect(now).toMatchObject({ shadow: 9, shadowBlur: 3, textCase: 'title' });
+  });
+
+  it('puts the shadow where the angle says', () => {
+    expect(shadowOffset(10, 0)).toEqual({ dx: 10, dy: 0 });
+    expect(shadowOffset(10, -90)).toEqual({ dx: 0, dy: 10 });
+    expect(shadowOffset(10, 90)).toEqual({ dx: 0, dy: -10 });
+    expect(shadowOffset(10, -45)).toEqual({ dx: 7.07, dy: 7.07 });
+  });
+
+  it('finds the bold and italic variants of a font', () => {
+    expect(fontVariant('montserrat-regular', { bold: true })).toBe('montserrat-bold');
+    expect(fontVariant('montserrat-bold', { bold: false })).toBe('montserrat-regular');
+    expect(fontVariant('montserrat-black', { bold: false })).toBe('montserrat-regular');
+    expect(fontVariant('montserrat-bold', { italic: true })).toBe('montserrat-italic');
+    expect(fontVariant('montserrat-italic', { italic: false })).toBe('montserrat-regular');
+    expect(fontVariant('anton', { bold: true })).toBeNull();
+    expect(fontVariant('anton', { italic: true })).toBeNull();
+    expect(isBoldFont(getFont('montserrat-black'))).toBe(true);
   });
 });

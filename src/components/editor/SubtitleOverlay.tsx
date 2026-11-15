@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import type { SubtitleStyle } from '@/lib/shared/types';
-import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
+import { OUTPUT_HEIGHT, OUTPUT_WIDTH, shadowOffset } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
 import { activeAt, type SubPage } from '@/lib/shared/subtitles';
 import { cssFamily, getFont, lineHeightFactor } from '@/lib/shared/fonts';
@@ -20,6 +20,17 @@ import { useEditor } from '@/lib/client/store';
 import { player, usePlayback } from '@/lib/client/player';
 import { setSubtitleText } from '@/lib/client/actions';
 
+/** CSS text-shadow of a style: the same offset, blur and opacity the export draws. */
+export function cssShadow(
+  style: Pick<SubtitleStyle, 'shadowOn' | 'shadow' | 'shadowColor' | 'shadowOpacity' | 'shadowBlur' | 'shadowAngle'>,
+): string | undefined {
+  if (!style.shadowOn || style.shadowOpacity <= 0 || (style.shadow <= 0 && style.shadowBlur <= 0)) return undefined;
+  const { dx, dy } = shadowOffset(style.shadow, style.shadowAngle);
+  const hex = style.shadowColor.replace('#', '').padEnd(6, '0');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) || 0);
+  return `${dx}px ${dy}px ${style.shadowBlur}px rgba(${r}, ${g}, ${b}, ${style.shadowOpacity})`;
+}
+
 function textStyle(style: SubtitleStyle): React.CSSProperties {
   const font = getFont(style.fontId);
   return {
@@ -27,8 +38,10 @@ function textStyle(style: SubtitleStyle): React.CSSProperties {
     fontSize: style.fontSize,
     lineHeight: lineHeightFactor(font),
     color: style.textColor,
+    letterSpacing: style.letterSpacing ? `${style.letterSpacing}px` : undefined,
+    textDecoration: style.underline ? 'underline' : undefined,
     WebkitTextStroke: style.outlineWidth > 0 ? `${style.outlineWidth * 2}px ${style.outlineColor}` : undefined,
-    textShadow: style.shadow > 0 ? `${style.shadow}px ${style.shadow}px 0 rgba(0,0,0,0.5)` : undefined,
+    textShadow: cssShadow(style),
   };
 }
 

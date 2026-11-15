@@ -45,6 +45,50 @@ const PRESETS: { name: string; style: Partial<SubtitleStyle> }[] = [
     style: { fontId: 'luckiest-guy', fontSize: 96, outlineWidth: 7, shadow: 6, wordsPerPage: 2, activeScale: 1.12, animationIn: 'pop' },
   },
   { name: 'Una palabra', style: { fontSize: 120, wordsPerPage: 1, outlineWidth: 8, shadow: 5, animationIn: 'zoom' } },
+  {
+    name: 'Caja',
+    style: {
+      fontId: 'montserrat-bold',
+      fontSize: 66,
+      outlineWidth: 0,
+      shadow: 3,
+      uppercase: false,
+      highlightBox: true,
+      highlightColor: '#FF6B35',
+      boxTextColor: '#111111',
+      dimUpcoming: true,
+      wordsPerPage: 4,
+      maxCharsPerLine: 22,
+      animationIn: 'fade',
+    },
+  },
+  {
+    name: 'Karaoke',
+    style: {
+      fontId: 'poppins-extrabold',
+      fontSize: 78,
+      outlineWidth: 5,
+      shadow: 3,
+      dimUpcoming: true,
+      highlightColor: '#3DFF8B',
+      wordsPerPage: 4,
+      maxCharsPerLine: 18,
+    },
+  },
+  {
+    name: 'Caja amarilla',
+    style: {
+      fontId: 'anton',
+      fontSize: 104,
+      outlineWidth: 5,
+      shadow: 0,
+      highlightBox: true,
+      highlightColor: '#FFE600',
+      boxTextColor: '#000000',
+      wordsPerPage: 2,
+      animationIn: 'pop',
+    },
+  },
 ];
 
 /** Look, position and animation of the automatic subtitles. */
@@ -118,7 +162,17 @@ export function SubtitleStylePanel() {
                       textTransform: merged.uppercase ? 'uppercase' : 'none',
                     }}
                   >
-                    Hola <span style={{ color: merged.highlight ? merged.highlightColor : undefined }}>tú</span>
+                    <span style={{ opacity: merged.dimUpcoming ? 1 : undefined }}>Hola</span>{' '}
+                    <span
+                      style={
+                        merged.highlight && merged.highlightBox
+                          ? { background: merged.highlightColor, color: merged.boxTextColor, WebkitTextStroke: '0', padding: '0 3px' }
+                          : { color: merged.highlight ? merged.highlightColor : undefined }
+                      }
+                    >
+                      tú
+                    </span>
+                    {merged.dimUpcoming && <span style={{ opacity: 0.4 }}> ya</span>}
                   </span>
                   <span className="mt-1 block text-[10px] text-muted">{p.name}</span>
                 </button>
@@ -148,9 +202,24 @@ export function SubtitleStylePanel() {
           <Toggle label="Resaltar la palabra mientras se dice" checked={style.highlight} onChange={(v) => set('highlight', v)} />
           {style.highlight && (
             <>
-              <Row label="Color">
+              <Row label="Estilo">
+                <Segmented
+                  value={style.highlightBox ? 'box' : 'color'}
+                  onChange={(v) => set('highlightBox', v === 'box')}
+                  options={[
+                    { value: 'color', label: 'Color' },
+                    { value: 'box', label: 'Caja' },
+                  ]}
+                />
+              </Row>
+              <Row label={style.highlightBox ? 'Color de la caja' : 'Color'}>
                 <ColorField value={style.highlightColor} onChange={(v) => set('highlightColor', v)} />
               </Row>
+              {style.highlightBox && (
+                <Row label="Texto en la caja">
+                  <ColorField value={style.boxTextColor} onChange={(v) => set('boxTextColor', v)} />
+                </Row>
+              )}
               <SliderRow
                 label="Agrandar"
                 value={style.activeScale}
@@ -180,6 +249,10 @@ export function SubtitleStylePanel() {
           />
           <SliderRow label="Horizontal" value={style.positionX} min={0} max={100} unit="%" onChange={(v) => set('positionX', v)} />
           <SliderRow label="Vertical" value={style.positionY} min={0} max={100} unit="%" onChange={(v) => set('positionY', v)} />
+        </Section>
+
+        <Section title="Palabras pendientes">
+          <Toggle label="Atenuar las que aún no se han dicho" checked={style.dimUpcoming} onChange={(v) => set('dimUpcoming', v)} />
         </Section>
 
         <Section title="Animación">

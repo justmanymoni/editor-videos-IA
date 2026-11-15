@@ -91,3 +91,45 @@ describe('font catalog', () => {
     }
   });
 });
+
+describe('highlight box and dimmed words in ASS', () => {
+  const words = [
+    { key: 'a', text: 'HOLA', start: 0, end: 0.4, breakBefore: false, sentenceEnd: false },
+    { key: 'b', text: 'MUNDO', start: 0.5, end: 0.9, breakBefore: false, sentenceEnd: false },
+  ];
+  const pages = buildPages(words, DEFAULT_SUBTITLE_STYLE);
+
+  it('adds a box layer under the text only when asked', () => {
+    const plain = buildAss(pages, DEFAULT_SUBTITLE_STYLE);
+    expect(plain).not.toContain('Style: Box');
+    expect(plain).not.toContain(',Box,');
+    const boxed = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, highlightBox: true, boxTextColor: '#102030' });
+    const lines = boxed.split('\n');
+    expect(lines.filter((l) => l.startsWith('Style: Box,')).length).toBe(1);
+    const box = lines.find((l) => l.startsWith('Dialogue: 0,') && l.includes(',Box,'))!;
+    const text = lines.find((l) => l.startsWith('Dialogue: 1,') && l.includes(',Sub,'))!;
+    expect(box).toBeTruthy();
+    expect(text).toBeTruthy();
+    // Same position in both layers, and padding only on the box.
+    expect(box).toContain('\\an5\\pos(540,');
+    expect(text).toContain('\\an5\\pos(540,');
+    expect(box).toMatch(/\\xbord\d+\\ybord\d+/);
+    // The box shows on the first word from the start and on the second when it is said.
+    expect(box).toContain('\\3a&HFF&\\3a&H00&');
+    expect(box).toContain('\\t(500,500,\\3a&H00&)');
+    // In the text layer the active word takes the box text colour.
+    expect(text).toContain('\\1c&H302010&');
+  });
+
+  it('does not draw a box when the highlight is off', () => {
+    expect(buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, highlight: false, highlightBox: true })).not.toContain('Style: Box');
+  });
+
+  it('fades the words that have not been said yet', () => {
+    const dim = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, dimUpcoming: true });
+    expect(dim).toContain('\\1a&H99&');
+    expect(dim).toContain('\\t(500,500,\\1a&H00&\\3a&H00&\\4a&H80&)');
+    // Letter animations reveal the text themselves.
+    expect(buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, dimUpcoming: true, animationIn: 'typewriter' })).not.toContain('\\1a&H99&');
+  });
+});

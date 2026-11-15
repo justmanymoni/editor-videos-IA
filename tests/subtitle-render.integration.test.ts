@@ -99,6 +99,28 @@ describe.skipIf(!hasFfmpeg)('subtitle rendering (libass)', () => {
     expect(s.white).toBeGreaterThan(1500);
   });
 
+  it('puts the spoken word in a box and dims the words to come', () => {
+    const boxed = { ...style, highlightBox: true, dimUpcoming: true };
+    const plain = frameStats(dir, style, 1.7);
+    // DOS is being said: UNO was said (white), TRES is still to come (dimmed, so not white).
+    const second = frameStats(dir, boxed, 1.7);
+    expect(second.yellow).toBeGreaterThan(plain.yellow * 2); // a filled box, not only letters
+    expect(second.whiteMax).toBeLessThan(second.yellowMin);
+    // The box is where the highlighted word was, a little wider on both sides.
+    expect(second.yellowMin).toBeLessThan(plain.yellowMin);
+    expect(second.yellowMax).toBeGreaterThan(plain.yellowMax);
+    expect(plain.yellowMin - second.yellowMin).toBeLessThan(40);
+    expect(second.yellowMax - plain.yellowMax).toBeLessThan(40);
+    // Without dimming, the word to come is white again, at the right of the box.
+    const undimmed = frameStats(dir, { ...boxed, dimUpcoming: false }, 1.7);
+    expect(undimmed.whiteMax).toBeGreaterThan(undimmed.yellowMax);
+    // TRES is being said: everything before it is white.
+    const third = frameStats(dir, boxed, 2.2);
+    expect(third.whiteMax).toBeLessThan(third.yellowMin);
+    // Letter animations still work with a box.
+    expect(frameStats(dir, { ...boxed, animationIn: 'drop' }, 2.3).yellow).toBeGreaterThan(plain.yellow);
+  });
+
   it('fades in, slides in and types letter by letter', () => {
     const full = frameStats(dir, { ...style, highlight: false }, 1.7);
     // Fade: half-way through the entrance the text is dim (no pure white yet), later it is complete.

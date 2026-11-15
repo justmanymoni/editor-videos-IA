@@ -47,6 +47,17 @@ const escapeText = (t: string) => t.replace(/\\/g, '＼').replace(/\{/g, '(').re
 
 const ms = (seconds: number) => Math.max(0, Math.round(seconds * 1000));
 
+/** Room between the highlighted word and the edge of its box, as a fraction of the font size: sideways and up/down. */
+export const BOX_PAD_X = 0.18;
+export const BOX_PAD_Y = 0.03;
+/** Opacity of the words that have not been said yet, when they are dimmed. */
+export const DIM_OPACITY = 0.4;
+const alpha = (opacity: number) =>
+  `&H${Math.round((1 - opacity) * 255)
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase()}&`;
+
 /**
  * One event per subtitle block. The spoken word is recoloured with instant
  * "t" transforms, and the entrance animation uses move, fad and t tags, so
@@ -65,6 +76,16 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
   const scale = Math.round(style.activeScale * 100);
   const anim = style.animationIn;
   const perLetter = isLetterAnimation(anim);
+  const boxed = style.highlight && style.highlightBox;
+  const boxText = assInlineColor(style.boxTextColor);
+  // Letter animations already reveal the text little by little.
+  const dim = style.dimUpcoming && !perLetter;
+  const boxLine = boxed
+    ? [
+        // Same font and size, drawn as an opaque box (BorderStyle 3) under the text: its fill is invisible and the box only shows on the active word.
+        `Style: Box,${font.assFamily},${size},${assStyleColor(style.textColor, 0xff)},${assStyleColor(style.textColor, 0xff)},${assStyleColor(style.highlightColor)},${assStyleColor('#000000', 0xff)},${font.bold ? -1 : 0},${font.italic ? -1 : 0},0,0,100,100,0,0,3,0,0,5,0,0,0,1`,
+      ]
+    : [];
 
   const header = [
     '[Script Info]',
@@ -78,6 +99,7 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     `Style: Sub,${font.assFamily},${size},${assStyleColor(style.textColor)},${assStyleColor(style.highlightColor)},${assStyleColor(style.outlineColor)},${assStyleColor('#000000', 0x80)},${font.bold ? -1 : 0},${font.italic ? -1 : 0},0,0,100,100,0,0,1,${style.outlineWidth},${style.shadow},5,0,0,0,1`,
+    ...boxLine,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -109,42 +131,69 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
 
     const letters = page.words.reduce((n, w) => n + [...w.text].filter((c) => c !== ' ').length, 0);
     const step = letterStep(letters, duration);
-    let letter = 0;
 
-    const text = page.lines
-      .map((line) =>
-        line
-          .map((wi) => {
-            const word = page.words[wi];
-            let tags = `${grow}\\1c${base}`;
-            if (style.highlight) {
+    /**
+     * The text of the block for one of the two layers. `box` builds the layer
+     * under the text: the same words with the same sizes (so libass lays them
+     * out identically) but invisible, with a box that shows on the active word.
+     */
+    const layer = (box: boolean) => {
+      let letter = 0;
+      return page.lines
+        .map((line) =>
+          line
+            .map((wi) => {
+              const word = page.words[wi];
               const on = wi === 0 ? 0 : ms(word.start - page.start);
               const offAt = ms(page.activeEnd[wi] - page.start);
-              const big = scale !== 100 && !perLetter;
-              // A transform from 0 to 0 means "during the whole line" in ASS, so the first word is coloured directly.
-              tags += on <= 0 ? `\\1c${hl}` : `\\t(${on},${on},\\1c${hl})`;
-              if (big) tags += `\\t(${Math.max(on, inMs, 1)},${Math.max(on, inMs, 1)},\\fscx${scale}\\fscy${scale})`;
-              tags += `\\t(${offAt},${offAt},\\1c${base}${big ? '\\fscx100\\fscy100' : ''})`;
-            }
-            let body = escapeText(word.text);
-            if (perLetter) {
-              body = [...body]
-                .map((ch) => {
-                  if (ch === ' ') return ch;
-                  const at = ms(letter++ * step);
-                  const show = at <= 0 ? '\\alpha&H00&' : `\\alpha&HFF&\\t(${at},${at},\\alpha&H00&)`;
-                  if (anim === 'typewriter') return `{${show}}${ch}`;
-                  const big = Math.round(DROP_SCALE * 100);
-                  return `{${show}\\fscx${big}\\fscy${big}\\t(${at},${at + ms(LETTER_SETTLE)},\\fscx100\\fscy100)}${ch}`;
-                })
-                .join('');
-            }
-            return `{${tags}}${body}`;
-          })
-          .join(' '),
-      )
-      .join('\\N');
-    events.push(`Dialogue: 0,${assTime(page.start)},${assTime(page.end)},Sub,,0,0,0,,{${lead.join('')}}${text}`);
+              const big = style.highlight && scale !== 100 && !perLetter;
+              // A transform from 0 to 0 means "during the whole line" in ASS, so the first word is changed directly.
+              const from = (tag: string) => (on <= 0 ? tag : `\\t(${on},${on},${tag})`);
+              const grows = big ? `\\t(${Math.max(on, inMs, 1)},${Math.max(on, inMs, 1)},\\fscx${scale}\\fscy${scale})` : '';
+              const shrinks = big ? '\\fscx100\\fscy100' : '';
+              let tags: string;
+              if (box) {
+                tags = `${grow}\\3a&HFF&${from('\\3a&H00&')}${grows}\\t(${offAt},${offAt},\\3a&HFF&${shrinks})`;
+              } else {
+                tags = `${grow}\\1c${base}`;
+                // Words still to come are faded; fill, outline and shadow have their own alpha.
+                if (dim)
+                  tags += `\\1a${alpha(DIM_OPACITY)}\\3a${alpha(DIM_OPACITY)}\\4a${alpha(DIM_OPACITY / 2)}${from('\\1a&H00&\\3a&H00&\\4a&H80&')}`;
+                if (style.highlight) {
+                  // In a box the word takes the box's text colour and loses its outline and shadow.
+                  tags += from(boxed ? `\\1c${boxText}\\3a&HFF&\\4a&HFF&` : `\\1c${hl}`);
+                  tags += grows;
+                  tags += `\\t(${offAt},${offAt},\\1c${base}${boxed ? '\\3a&H00&\\4a&H80&' : ''}${shrinks})`;
+                }
+              }
+              let body = escapeText(word.text);
+              if (perLetter) {
+                body = [...body]
+                  .map((ch) => {
+                    if (ch === ' ') return ch;
+                    const at = ms(letter++ * step);
+                    // The box layer only follows the sizes of the letters; it is never made visible letter by letter.
+                    const show = box ? '' : at <= 0 ? '\\alpha&H00&' : `\\alpha&HFF&\\t(${at},${at},\\alpha&H00&)`;
+                    if (anim === 'typewriter') return show ? `{${show}}${ch}` : ch;
+                    const large = Math.round(DROP_SCALE * 100);
+                    return `{${show}\\fscx${large}\\fscy${large}\\t(${at},${at + ms(LETTER_SETTLE)},\\fscx100\\fscy100)}${ch}`;
+                  })
+                  .join('');
+              }
+              // The box must not stretch over the space that follows the word.
+              return box ? `{${tags}}${body}{\\3a&HFF&}` : `{${tags}}${body}`;
+            })
+            .join(' '),
+        )
+        .join('\\N');
+    };
+
+    const times = `${assTime(page.start)},${assTime(page.end)}`;
+    if (boxed) {
+      const pad = `\\xbord${Math.round(style.fontSize * BOX_PAD_X)}\\ybord${Math.round(style.fontSize * BOX_PAD_Y)}`;
+      events.push(`Dialogue: 0,${times},Box,,0,0,0,,{${lead.join('')}${pad}}${layer(true)}`);
+    }
+    events.push(`Dialogue: 1,${times},Sub,,0,0,0,,{${lead.join('')}}${layer(false)}`);
   }
   return [...header, ...events, ''].join('\n');
 }

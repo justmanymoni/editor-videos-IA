@@ -215,6 +215,11 @@ export interface SubtitleStyle {
   positionY: number;
   /** Colour the word being spoken with `highlightColor`. */
   highlight: boolean;
+  /** Instead of colouring the word, put it in a box of `highlightColor` with the text in `boxTextColor`. */
+  highlightBox: boolean;
+  boxTextColor: string;
+  /** Words that have not been said yet are shown faded. */
+  dimUpcoming: boolean;
   /** Animation when a block appears, and whether it fades away at the end. */
   animationIn: SubtitleAnimation;
   animationOut: 'none' | 'fade';
@@ -350,6 +355,9 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   positionX: 50,
   positionY: 72,
   highlight: true,
+  highlightBox: false,
+  boxTextColor: '#111111',
+  dimUpcoming: false,
   animationIn: 'none',
   animationOut: 'none',
   uppercase: true,

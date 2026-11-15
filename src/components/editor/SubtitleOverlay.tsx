@@ -15,6 +15,7 @@ import { clamp } from '@/lib/shared/ranges';
 import { activeAt, type SubPage } from '@/lib/shared/subtitles';
 import { cssFamily, getFont, lineHeightFactor } from '@/lib/shared/fonts';
 import { blockPose, isLetterAnimation, letterPose, letterStep } from '@/lib/shared/subtitle-anim';
+import { BOX_PAD_X, BOX_PAD_Y, DIM_OPACITY } from '@/lib/shared/ass';
 import { useEditor } from '@/lib/client/store';
 import { player, usePlayback } from '@/lib/client/player';
 import { setSubtitleText } from '@/lib/client/actions';
@@ -31,6 +32,42 @@ function textStyle(style: SubtitleStyle): React.CSSProperties {
   };
 }
 
+/**
+ * Ascent and descent the browser uses for the inline box of a font, in ems.
+ * libass draws the highlight box from the font's Windows metrics instead, so
+ * the preview needs both to put its box in the same place.
+ */
+const inlineMetrics = new Map<string, { ascent: number; descent: number }>();
+function measureInline(fontId: string) {
+  const cached = inlineMetrics.get(fontId);
+  if (cached) return cached;
+  const ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return null;
+  const family = `100px "${cssFamily(getFont(fontId))}"`;
+  if (!document.fonts.check(family)) return null;
+  ctx.font = family;
+  const m = ctx.measureText('Hg');
+  const metrics = { ascent: m.fontBoundingBoxAscent / 100, descent: m.fontBoundingBoxDescent / 100 };
+  inlineMetrics.set(fontId, metrics);
+  return metrics;
+}
+
+/** Position of the highlight box around a word, as CSS offsets from the word's inline box. */
+function boxInsets(style: SubtitleStyle): React.CSSProperties | null {
+  const font = getFont(style.fontId);
+  const inline = typeof document === 'undefined' ? null : measureInline(style.fontId);
+  if (!inline) return null;
+  const padX = Math.round(style.fontSize * BOX_PAD_X);
+  const padY = Math.round(style.fontSize * BOX_PAD_Y);
+  return {
+    left: -padX,
+    right: -padX,
+    top: -(padY + (font.winAscent / font.unitsPerEm - inline.ascent) * style.fontSize),
+    bottom: -(padY + (font.winDescent / font.unitsPerEm - inline.descent) * style.fontSize),
+    background: style.highlightColor,
+  };
+}
+
 export function SubtitleOverlay({ pages, style }: { pages: SubPage[]; style: SubtitleStyle }) {
   const playing = usePlayback((s) => s.playing);
   const activePage = usePlayback((s) => activeAt(pages, s.time)?.page ?? -1);
@@ -43,6 +80,18 @@ export function SubtitleOverlay({ pages, style }: { pages: SubPage[]; style: Sub
   const page: SubPage | undefined = pages[index];
   const sample = activePage < 0;
   const perLetter = isLetterAnimation(style.animationIn);
+  const boxed = style.highlight && style.highlightBox;
+  // The box needs the font's metrics, which are only known once the font has loaded.
+  const [, setFontReady] = useState(0);
+  useEffect(() => {
+    if (!boxed) return;
+    let alive = true;
+    void document.fonts.load(`100px "${cssFamily(getFont(style.fontId))}"`).then(() => alive && setFontReady((n) => n + 1));
+    return () => {
+      alive = false;
+    };
+  }, [boxed, style.fontId]);
+  const insets = boxed ? boxInsets(style) : null;
 
   useEffect(() => {
     const el = blockRef.current;
@@ -58,11 +107,19 @@ export function SubtitleOverlay({ pages, style }: { pages: SubPage[]; style: Sub
       el.style.opacity = String(pose.opacity);
       el.style.transform = `translate(-50%, -50%) translate(${pose.dx}px, ${pose.dy}px) rotate(${pose.rotate}deg) scale(${pose.scale})`;
       el.style.filter = pose.blur ? `blur(${pose.blur}px)` : '';
+      const dim = style.dimUpcoming && !perLetter;
       words.forEach((w, i) => {
         const on = i === 0 ? 0 : page.words[i].start - page.start;
         const active = style.highlight && t >= on && t < page.activeEnd[i] - page.start;
-        w.style.color = active ? style.highlightColor : '';
+        const inBox = active && boxed;
+        w.style.color = active ? (boxed ? style.boxTextColor : style.highlightColor) : '';
+        // Inside its box the word has no outline or shadow, as in the export.
+        w.style.webkitTextStroke = inBox ? '0' : '';
+        w.style.textShadow = inBox ? 'none' : '';
+        w.style.opacity = dim && t < on ? String(DIM_OPACITY) : '';
         w.style.fontSize = active && style.activeScale !== 1 && !perLetter ? `${style.activeScale}em` : '';
+        const box = w.querySelector<HTMLElement>('[data-box]');
+        if (box) box.style.opacity = inBox ? '1' : '0';
       });
       letters.forEach((l, i) => {
         const p = sample ? { opacity: 1, scale: 1 } : letterPose(style.animationIn, i, step, t);
@@ -72,7 +129,7 @@ export function SubtitleOverlay({ pages, style }: { pages: SubPage[]; style: Sub
     };
     apply(usePlayback.getState().time);
     return usePlayback.subscribe((s) => apply(s.time));
-  }, [page, style, sample, perLetter, editing]);
+  }, [page, style, sample, perLetter, editing, boxed, insets?.top]);
 
   if (!style.enabled || !page) return null;
   const left = (style.positionX / 100) * OUTPUT_WIDTH;
@@ -157,7 +214,8 @@ export function SubtitleOverlay({ pages, style }: { pages: SubPage[]; style: Sub
           {line.map((wi, k) => (
             <Fragment key={wi}>
               {k > 0 && ' '}
-              <span data-w={wi}>
+              <span data-w={wi} className={insets ? 'relative' : undefined}>
+                {insets && <span data-box className="absolute -z-10" style={{ ...insets, opacity: 0 }} />}
                 {perLetter
                   ? [...page.words[wi].text].map((ch) => (
                       <span key={letter} data-l={letter++}>

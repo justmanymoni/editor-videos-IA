@@ -12,6 +12,7 @@ import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTi
 import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimItemAt, trimRange, wordRunRanges } from '@/lib/shared/edit';
 import { computeFillerCuts, computeRetakeCuts, computeSilenceCuts } from '@/lib/shared/cleanup';
 import { alignScript } from '@/lib/shared/script';
+import { resizePage } from '@/lib/shared/subtitles';
 import { splitTextBlocks } from '@/lib/shared/text';
 import type { TextPreset } from '@/lib/shared/text-presets';
 import { buildSrt, buildVtt, captionPages, transcriptText } from '@/lib/shared/text-export';
@@ -75,11 +76,11 @@ function selectedKeys(): string[] {
   return keys;
 }
 
-function patchWords(keys: string[], patch: (prev: WordOverride | undefined) => WordOverride, coalesceKey?: string) {
+function patchWords(keys: string[], patch: (prev: WordOverride | undefined, key: string) => WordOverride, coalesceKey?: string) {
   if (!keys.length) return;
   ed().commit((d) => {
     for (const k of keys) {
-      const next = patch(d.words[k]);
+      const next = patch(d.words[k], k);
       const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== false && v !== ''));
       if (Object.keys(clean).length) d.words[k] = clean;
       else delete d.words[k];
@@ -90,6 +91,22 @@ function patchWords(keys: string[], patch: (prev: WordOverride | undefined) => W
 export function setWordText(key: string, text: string, original: string) {
   const value = text.trim();
   patchWords([key], (prev) => ({ ...prev, text: value && value !== original ? value : undefined }));
+}
+
+/**
+ * Moves the left or right edge of a subtitle block to the time `to`. The block
+ * next to it gives way, so two subtitles never overlap.
+ */
+export function resizeSubtitle(page: number, edge: 'start' | 'end', to: number) {
+  const { pages, segs } = currentDerived();
+  const resized = resizePage(pages, page, edge, to, sequenceDuration(segs));
+  if (!resized) return;
+  const ms = (v: number | undefined) => (v === undefined ? undefined : Math.round(v * 1000) / 1000);
+  const offsets = new Map(resized.offsets.map((o) => [o.key, o]));
+  patchWords([...offsets.keys()], (prev, key) => {
+    const o = offsets.get(key)!;
+    return { ...prev, startOffset: ms(o.startOffset) ?? prev?.startOffset, endOffset: ms(o.endOffset) ?? prev?.endOffset };
+  });
 }
 
 /**
@@ -334,6 +351,8 @@ export function trimAtPlayhead(side: 'left' | 'right') {
   const t = usePlayback.getState().time;
   const sel = s.selection;
   if (sel?.kind === 'multi') return trimSelected(sel.items, t, side);
+  // A selected subtitle starts (Q) or ends (W) at the cursor.
+  if (sel?.kind === 'subtitle') return resizeSubtitle(sel.page, side === 'left' ? 'start' : 'end', t);
   if (isItemSelection(sel)) {
     const item = itemsOf(doc, sel.kind).find((x) => x.id === sel.id);
     const trimmed = item ? trimItemAt(item, t, side) : null;

@@ -112,6 +112,9 @@ export interface WordView {
   tlEnd: number | null;
   hidden: boolean;
   breakBefore: boolean;
+  /** Dragged edges of the subtitle block that starts or ends with this word (see WordOverride). */
+  startOffset?: number;
+  endOffset?: number;
 }
 
 export interface ClipWords {
@@ -179,6 +182,8 @@ export function buildClipWords(
         tlEnd: deleted ? null : tlEnd,
         hidden: !!ov?.hidden,
         breakBefore: !!ov?.breakBefore,
+        startOffset: ov?.startOffset,
+        endOffset: ov?.endOffset,
       };
     });
     return { clip, clipIndex, words, views };

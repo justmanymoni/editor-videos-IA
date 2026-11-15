@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_SUBTITLE_STYLE, DEFAULT_TEXT, normalizeSubtitleStyle, shadowOffset } from '@/lib/shared/types';
-import { activeAt, buildPages, subtitleText, type SubWord } from '@/lib/shared/subtitles';
+import { MIN_PAGE, activeAt, buildPages, resizePage, subtitleText, type SubWord } from '@/lib/shared/subtitles';
 import { assInlineColor, assStyleColor, assTime, buildAss } from '@/lib/shared/ass';
 import { SUBTITLE_FONTS, assFontSize, fontVariant, getFont, isBoldFont } from '@/lib/shared/fonts';
 import { readFontInfo } from '@/lib/server/ttf';
@@ -224,5 +224,87 @@ describe('style of the text', () => {
     expect(fontVariant('anton', { bold: true })).toBeNull();
     expect(fontVariant('anton', { italic: true })).toBeNull();
     expect(isBoldFont(getFont('montserrat-black'))).toBe(true);
+  });
+});
+
+describe('edges of the subtitle blocks', () => {
+  const STYLE = { wordsPerPage: 1, maxCharsPerLine: 16 };
+  const noOverlap = (pages: ReturnType<typeof buildPages>) => pages.every((p, k) => p.end > p.start && (k === 0 || p.start >= pages[k - 1].end));
+
+  it('never lets two blocks overlap, whatever the times of the words', () => {
+    // Two words at the same instant, one inside the other and a long hold over the next block.
+    const pages = buildPages([sw('A', 1, 1.2), sw('B', 1, 1.1), sw('C', 1.05, 3), sw('D', 1.4, 1.6, { endOffset: 5 }), sw('E', 2, 2.2)], STYLE);
+    expect(pages).toHaveLength(5);
+    expect(noOverlap(pages)).toBe(true);
+    // Each block ends, at the latest, where the next one begins.
+    expect(pages[3].end).toBe(pages[4].start);
+  });
+
+  it('applies the dragged edges stored in the words', () => {
+    const pages = buildPages([sw('A', 1, 1.2, { startOffset: -0.5, endOffset: 0.1 }), sw('B', 3, 3.2, { startOffset: 0.1 })], STYLE);
+    expect(pages[0].start).toBeCloseTo(0.5);
+    expect(pages[0].end).toBeCloseTo(1.3);
+    expect(pages[1].start).toBeCloseTo(3.1);
+    // A start moved before the block in front cuts that one short instead of overlapping it.
+    const pushed = buildPages([sw('A', 1, 1.2), sw('B', 3, 3.2, { startOffset: -1.9 })], STYLE);
+    expect(pushed[1].start).toBeCloseTo(1.1);
+    expect(pushed[0].end).toBeCloseTo(1.1);
+    expect(noOverlap(pushed)).toBe(true);
+  });
+
+  it('stretching the end of a block pushes the start of the next one', () => {
+    const words = [sw('A', 1, 1.2), sw('B', 2, 2.4), sw('C', 4, 4.4)];
+    const pages = buildPages(words, STYLE);
+    // Into the gap: only this block changes.
+    const gap = resizePage(pages, 0, 'end', 1.8)!;
+    expect([...gap.times.keys()]).toEqual([0]);
+    expect(gap.offsets).toEqual([{ key: 'A1', endOffset: expect.closeTo(0.6) }]);
+    // Over the next block: it starts where this one ends, keeping a minimum of itself.
+    const over = resizePage(pages, 0, 'end', 2.2)!;
+    expect(over.times.get(0)).toEqual({ start: 1, end: 2.2 });
+    expect(over.times.get(1)).toEqual({ start: 2.2, end: pages[1].end });
+    expect(over.offsets).toEqual([
+      { key: 'A1', endOffset: expect.closeTo(1) },
+      { key: 'B2', startOffset: expect.closeTo(0.2) },
+    ]);
+    expect(resizePage(pages, 0, 'end', 99)!.times.get(0)!.end).toBeCloseTo(pages[1].end - MIN_PAGE);
+    // The stored offsets give exactly those blocks back.
+    const next = buildPages([sw('A', 1, 1.2, { endOffset: 1 }), sw('B', 2, 2.4, { startOffset: 0.2 }), words[2]], STYLE);
+    expect(next[0].end).toBeCloseTo(2.2);
+    expect(next[1].start).toBeCloseTo(2.2);
+    expect(noOverlap(next)).toBe(true);
+    // The last block stops at the end of the video.
+    expect(resizePage(pages, 2, 'end', 99, 6)!.times.get(2)!.end).toBe(6);
+  });
+
+  it('stretching the start of a block cuts the one before', () => {
+    const pages = buildPages([sw('A', 1, 1.2), sw('B', 2, 2.4), sw('C', 4, 4.4)], STYLE);
+    const r = resizePage(pages, 1, 'start', 1.3)!;
+    expect(r.times.get(1)).toEqual({ start: 1.3, end: pages[1].end });
+    expect(r.times.get(0)).toEqual({ start: 1, end: 1.3 });
+    expect(r.offsets).toEqual([{ key: 'B2', startOffset: expect.closeTo(-0.7) }]);
+    // It cannot swallow the block before, nor shrink below the minimum.
+    expect(resizePage(pages, 1, 'start', 0)!.times.get(1)!.start).toBeCloseTo(1 + MIN_PAGE);
+    expect(resizePage(pages, 1, 'start', 99)!.times.get(1)!.start).toBeCloseTo(pages[1].end - MIN_PAGE);
+    expect(resizePage(pages, 0, 'start', -5)!.times.get(0)!.start).toBe(0);
+    expect(resizePage(pages, 7, 'start', 1)).toBeNull();
+  });
+
+  it('a word said before its block appears is not highlighted in the export', () => {
+    // The block starts when the second word is already being said.
+    const pages = buildPages([sw('HOLA', 1, 1.4, { startOffset: 0.7 }), sw('MUNDO', 1.5, 2)], { wordsPerPage: 3, maxCharsPerLine: 16 });
+    expect(pages[0].start).toBeCloseTo(1.7);
+    const ass = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, shadowOn: false });
+    const event = ass.split('\n').find((l) => l.startsWith('Dialogue:'))!;
+    expect(event).toContain('{\\1c&HFFFFFF&}HOLA');
+    // The second word is highlighted from the first frame of the block.
+    expect(event).toContain('{\\1c&HFFFFFF&\\1c&H00E6FF&\\t(650,650,\\1c&HFFFFFF&)}MUNDO');
+    expect(event).not.toMatch(/\\t\((-|0,0)/);
+    for (const style of [
+      { ...DEFAULT_SUBTITLE_STYLE, highlightBox: true },
+      { ...DEFAULT_SUBTITLE_STYLE, dimUpcoming: true, activeScale: 1.2 },
+    ]) {
+      expect(buildAss(pages, style)).not.toMatch(/\\t\((-|0,0)/);
+    }
   });
 });

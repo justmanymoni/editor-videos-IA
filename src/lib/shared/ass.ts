@@ -160,6 +160,8 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
               const word = page.words[wi];
               const on = wi === 0 ? 0 : ms(word.start - page.start);
               const offAt = ms(page.activeEnd[wi] - page.start);
+              // When the start of the block was moved past a word, that word is shown as already said.
+              const said = offAt <= 0;
               const big = style.highlight && scale !== 100 && !perLetter;
               // A transform from 0 to 0 means "during the whole line" in ASS, so the first word is changed directly.
               const from = (tag: string) => (on <= 0 ? tag : `\\t(${on},${on},${tag})`);
@@ -167,20 +169,23 @@ export function buildAss(pages: SubPage[], style: SubtitleStyle): string {
               const shrinks = big ? '\\fscx100\\fscy100' : '';
               let tags: string;
               if (kind === 'box') {
-                tags = `${grow}\\3a&HFF&${from('\\3a&H00&')}${grows}\\t(${offAt},${offAt},\\3a&HFF&${shrinks})`;
+                tags = `${grow}\\3a&HFF&`;
+                if (!said) tags += `${from('\\3a&H00&')}${grows}\\t(${offAt},${offAt},\\3a&HFF&${shrinks})`;
               } else if (kind === 'shadow') {
                 // A copy of the word in the shadow colour. Words still to come cast a fainter shadow, and the word in a box none.
                 const solid = `\\1a${shadowAlpha}\\3a${shadowAlpha}`;
                 tags = `${grow}\\1c${shadowColor}\\3c${shadowColor}`;
                 tags += dim ? `\\1a${alpha(style.shadowOpacity * DIM_OPACITY)}\\3a${alpha(style.shadowOpacity * DIM_OPACITY)}${from(solid)}` : solid;
-                if (boxed) tags += from('\\1a&HFF&\\3a&HFF&');
-                tags += grows;
-                if (boxed || big) tags += `\\t(${offAt},${offAt},${boxed ? solid : ''}${shrinks})`;
+                if (!said) {
+                  if (boxed) tags += from('\\1a&HFF&\\3a&HFF&');
+                  tags += grows;
+                  if (boxed || big) tags += `\\t(${offAt},${offAt},${boxed ? solid : ''}${shrinks})`;
+                }
               } else {
                 tags = `${grow}\\1c${base}`;
                 // Words still to come are faded.
                 if (dim) tags += `\\1a${alpha(DIM_OPACITY)}\\3a${alpha(DIM_OPACITY)}${from('\\1a&H00&\\3a&H00&')}`;
-                if (style.highlight) {
+                if (style.highlight && !said) {
                   // In a box the word takes the box's text colour and loses its outline.
                   tags += from(boxed ? `\\1c${boxText}\\3a&HFF&` : `\\1c${hl}`);
                   tags += grows;

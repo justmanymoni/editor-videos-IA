@@ -7,7 +7,7 @@ import { FRAME, clamp } from '@/lib/shared/ranges';
 import { sequenceDuration, type Segment } from '@/lib/shared/timeline';
 import { filmstripRows, frameAt } from '@/lib/shared/filmstrip';
 import { AUDIO_LANES, OVERLAY_LANES, TEXT_LANES, layoutLanes, moveToRow, type LaneOptions, type Lanes } from '@/lib/shared/lanes';
-import type { SubPage } from '@/lib/shared/subtitles';
+import { resizePage, type SubPage } from '@/lib/shared/subtitles';
 import { mediaUrl } from '@/lib/client/api';
 import { refKey, selRefs, selectionOf, toggleRef, useEditor, type SelRef, type Selection } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
@@ -21,6 +21,7 @@ import {
   moveItems,
   moveSegment,
   pickItems,
+  resizeSubtitle,
   splitAtPlayhead,
   trimAtPlayhead,
   trimSegment,
@@ -40,7 +41,19 @@ const TRACK_ORDER: TrackId[] = ['text', 'broll', 'main', 'audio'];
  * down. Upper rows of text and overlays are drawn over lower ones.
  */
 const LANE_OPTIONS: Record<ItemKind, LaneOptions> = { text: TEXT_LANES, broll: OVERLAY_LANES, audio: AUDIO_LANES };
-const EDGE = 7;
+/** Width, in pixels, of the zone on each edge of an element where it is stretched instead of moved. */
+const EDGE = 8;
+/** Cursors of an element: stretching by an edge (a bar with an arrow on each side) and moving. */
+const TRIM_CURSOR = 'var(--cursor-trim)';
+const SNAP_PX = 7;
+
+/** Which edge of an element the pointer is on. Narrow elements keep a part in the middle to move them. */
+function edgeAt(clientX: number, rect: DOMRect): 'start' | 'end' | null {
+  const zone = Math.min(EDGE, rect.width * 0.3);
+  if (clientX - rect.left < zone) return 'start';
+  if (rect.right - clientX < zone) return 'end';
+  return null;
+}
 const MIN_PPS = 4;
 const MAX_PPS = 400;
 
@@ -65,6 +78,8 @@ type Drag =
       row: number;
     }
   | { kind: 'item-trim'; track: ItemKind; id: string; edge: 'start' | 'end'; x0: number; dx: number }
+  /** An edge of a subtitle block; the block next to it gives way. */
+  | { kind: 'sub-trim'; page: number; edge: 'start' | 'end'; x0: number; dx: number }
   /** Selection box drawn on an empty part of the tracks (content pixels). `base` is what was selected before, when adding. */
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; moved: boolean; base: SelRef[] }
   /** Several selected items dragged together; `dt` is the shift in seconds. */
@@ -337,6 +352,20 @@ export function Timeline({ height }: { height: number }) {
     return best;
   };
 
+  /**
+   * Where the dragged edge of a subtitle is: it sticks to the playhead and to
+   * the edge of the block next to it, so one can end exactly where the other starts.
+   */
+  const subEdgeTime = (d: Extract<Drag, { kind: 'sub-trim' }>): number | null => {
+    const { pages: list, pps: p } = live.current;
+    const page = list[d.page];
+    if (!page) return null;
+    const t = (d.edge === 'start' ? page.start : page.end) + d.dx / p;
+    const near = [usePlayback.getState().time, d.edge === 'start' ? list[d.page - 1]?.end : list[d.page + 1]?.start];
+    for (const pt of near) if (pt !== undefined && Math.abs(pt - t) * p < SNAP_PX) return pt;
+    return t;
+  };
+
   const setDrag = (d: Drag | null) => {
     dragRef.current = d;
     setDragState(d);
@@ -381,6 +410,9 @@ export function Timeline({ height }: { height: number }) {
     } else if (d.kind === 'item-trim' && Math.abs(d.dx) > 1) {
       const item = itemsOf(d.track).find((x) => x.id === d.id);
       if (item) updateItem(d.track, d.id, trimItem(item, 'mediaId' in item ? md[item.mediaId] : undefined, d.edge, dt));
+    } else if (d.kind === 'sub-trim' && Math.abs(d.dx) > 1) {
+      const to = subEdgeTime(d);
+      if (to !== null) resizeSubtitle(d.page, d.edge, to);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -421,9 +453,14 @@ export function Timeline({ height }: { height: number }) {
       } else if (d.kind === 'seg-move') setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 4 });
       else setDrag({ ...d, dx });
     };
+    // The cursor of the gesture is kept all over the window until it ends.
+    const kind = dragRef.current?.kind ?? '';
+    const cursor = kind.endsWith('-trim') ? 'trim' : kind.endsWith('-move') ? 'move' : '';
+    if (cursor) document.body.dataset.dragCursor = cursor;
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', finish);
     return () => {
+      delete document.body.dataset.dragCursor;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', finish);
     };
@@ -431,13 +468,7 @@ export function Timeline({ height }: { height: number }) {
   }, [drag !== null, finish]);
 
   const select = (sel: Selection) => useEditor.getState().setSelection(sel);
-  const edgeOf = (e: React.PointerEvent, el: HTMLElement): 'start' | 'end' | null => {
-    const r = el.getBoundingClientRect();
-    if (r.width < EDGE * 3) return null;
-    if (e.clientX - r.left < EDGE) return 'start';
-    if (r.right - e.clientX < EDGE) return 'end';
-    return null;
-  };
+  const edgeOf = (e: React.PointerEvent, el: HTMLElement) => edgeAt(e.clientX, el.getBoundingClientRect());
 
   const onSegDown = (e: React.PointerEvent, seg: Segment) => {
     if (e.button !== 0) return;
@@ -475,6 +506,8 @@ export function Timeline({ height }: { height: number }) {
     const ref: SelRef = { kind: 'subtitle', page: page.index };
     if (additive(e)) return select(toggleRef(useEditor.getState().selection, ref));
     select(ref);
+    const edge = edgeOf(e, e.currentTarget as HTMLElement);
+    if (edge) return setDrag({ kind: 'sub-trim', page: page.index, edge, x0: e.clientX, dx: 0 });
     // Seek to the clicked point so S can split the block right there.
     const r = e.currentTarget.getBoundingClientRect();
     player.seek(page.start + ((e.clientX - r.left) / Math.max(1, r.width)) * (page.end - page.start));
@@ -540,6 +573,9 @@ export function Timeline({ height }: { height: number }) {
     return out;
   }, [segs, duration]);
 
+  // While an edge of a subtitle is dragged: the new times of that block and of the one it pushes.
+  const subDragTo = drag?.kind === 'sub-trim' ? subEdgeTime(drag) : null;
+  const subResize = drag?.kind === 'sub-trim' && subDragTo !== null ? resizePage(pages, drag.page, drag.edge, subDragTo, duration) : null;
   const moveMarker =
     drag?.kind === 'seg-move' && drag.moved ? nearest(clipBoundaries, (drag.seg.tlStart + drag.seg.tlEnd) / 2 + drag.dx / pps) : null;
   const itemTrack = (track: ItemKind, items: Item[], hint: string, extra?: object, under?: React.ReactNode) => (
@@ -636,7 +672,12 @@ export function Timeline({ height }: { height: number }) {
         </div>
         <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ minHeight: tracksHeight + 12 }}>
           <div ref={content} className="relative" style={{ width, height: tracksHeight }}>
-            <div className="relative cursor-ew-resize border-b border-line bg-panel-2" style={{ height: H.ruler }} onPointerDown={onRulerDown}>
+            <div
+              data-ruler
+              className="relative cursor-ew-resize border-b border-line bg-panel-2"
+              style={{ height: H.ruler }}
+              onPointerDown={onRulerDown}
+            >
               {ticks.map((t) => (
                 <div key={t} className="absolute top-0 h-full border-l border-line-strong" style={{ left: t * pps }}>
                   <span className="absolute top-1 left-1 font-mono text-[10px] text-faint">{formatTime(t, step < 1)}</span>
@@ -653,7 +694,14 @@ export function Timeline({ height }: { height: number }) {
               <div data-track="subs" className="absolute inset-x-0" style={{ top: rowY('text', 0), height: H.text }}>
                 {doc.subtitles.enabled ? (
                   pages.map((p) => (
-                    <SubBlock key={p.index} page={p} pps={pps} selected={selectedKeys.has(`subtitle:${p.index}`)} onDown={onSubDown} />
+                    <SubBlock
+                      key={p.index}
+                      page={p}
+                      times={subResize?.times.get(p.index)}
+                      pps={pps}
+                      selected={selectedKeys.has(`subtitle:${p.index}`)}
+                      onDown={onSubDown}
+                    />
                   ))
                 ) : (
                   <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[11px] text-faint">
@@ -703,7 +751,7 @@ export function Timeline({ height }: { height: number }) {
                     onPointerDown={(e) => onSegDown(e, seg)}
                     onPointerMove={(e) => {
                       if (!dragRef.current)
-                        (e.currentTarget as HTMLElement).style.cursor = edgeOf(e, e.currentTarget as HTMLElement) ? 'ew-resize' : 'grab';
+                        (e.currentTarget as HTMLElement).style.cursor = edgeOf(e, e.currentTarget as HTMLElement) ? TRIM_CURSOR : 'grab';
                     }}
                     className={clsx(
                       'absolute top-1.5 bottom-1.5 overflow-hidden rounded-md border',
@@ -757,6 +805,7 @@ export function Timeline({ height }: { height: number }) {
                       </span>
                     )}
                     {seg.rangeIndex > 0 && <div className="pointer-events-none absolute inset-y-0 left-0 w-[2px] bg-danger/80" />}
+                    {selected && w > 20 && <Grips />}
                   </div>
                 );
               })}
@@ -909,8 +958,7 @@ function ItemBlock({
       data-item={item.id}
       onPointerDown={(e) => onDown(e, track, item)}
       onPointerMove={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        e.currentTarget.style.cursor = r.width > EDGE * 3 && (e.clientX - r.left < EDGE || r.right - e.clientX < EDGE) ? 'ew-resize' : 'grab';
+        e.currentTarget.style.cursor = edgeAt(e.clientX, e.currentTarget.getBoundingClientRect()) ? TRIM_CURSOR : 'grab';
       }}
       className={clsx(
         'absolute overflow-hidden rounded-md border',
@@ -931,34 +979,56 @@ function ItemBlock({
         {label}
         {'volume' in item && ` · ${Math.round(item.volume * 100)}%`}
       </span>
+      {selected && w > 20 && <Grips color={track === 'text' ? 'bg-white' : 'bg-accent'} />}
     </div>
+  );
+}
+
+/** The grips on both edges of a selected element, where it is stretched. */
+function Grips({ color = 'bg-accent' }: { color?: string }) {
+  return (
+    <>
+      <span className={clsx('pointer-events-none absolute inset-y-0 left-0 w-[4px]', color)} />
+      <span className={clsx('pointer-events-none absolute inset-y-0 right-0 w-[4px]', color)} />
+    </>
   );
 }
 
 function SubBlock({
   page,
+  times,
   pps,
   selected,
   onDown,
 }: {
   page: SubPage;
+  /** Its times while one of its edges (or the neighbour's) is being dragged. */
+  times?: { start: number; end: number };
   pps: number;
   selected: boolean;
   onDown: (e: React.PointerEvent, page: SubPage) => void;
 }) {
+  const { start, end } = times ?? page;
+  // One pixel short of where the next block starts, so two blocks are never drawn over each other.
+  const w = Math.max(1, (end - start) * pps - 1);
   return (
     <div
       data-sub={page.index}
       onPointerDown={(e) => onDown(e, page)}
+      onPointerMove={(e) => {
+        e.currentTarget.style.cursor = edgeAt(e.clientX, e.currentTarget.getBoundingClientRect()) ? TRIM_CURSOR : 'pointer';
+      }}
       className={clsx(
-        'absolute top-1 bottom-1 cursor-pointer overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-semibold whitespace-nowrap',
+        'absolute top-1 bottom-1 overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-semibold whitespace-nowrap',
         // Flat orange with white letters, as in CapCut.
         selected ? 'z-10 border-white bg-[#F07A3A] text-white ring-1 ring-white' : 'border-black/30 bg-[#E0662D] text-white hover:bg-[#EA7035]',
+        w < 8 && 'px-0',
       )}
-      style={{ left: page.start * pps, width: Math.max(3, (page.end - page.start) * pps - 1) }}
+      style={{ left: start * pps, width: w }}
       title={page.words.map((w) => w.text).join(' ')}
     >
       {page.words.map((w) => w.text).join(' ')}
+      {selected && w > 20 && <Grips color="bg-white" />}
     </div>
   );
 }

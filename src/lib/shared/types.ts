@@ -311,6 +311,10 @@ export interface WordOverride {
   hidden?: boolean;
   /** Force a new subtitle page to start at this word. */
   breakBefore?: boolean;
+  /** Seconds added to the start of the subtitle block that begins with this word (its left edge was dragged). */
+  startOffset?: number;
+  /** Seconds the subtitle block that ends with this word stays after it (its right edge was dragged). */
+  endOffset?: number;
 }
 
 export type FitMode = 'cover' | 'blur';

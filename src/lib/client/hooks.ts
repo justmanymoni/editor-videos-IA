@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { api } from './api';
 import { useEditor } from './store';
 import { player, usePlayback } from './player';
-import { deleteSelection, splitAtPlayhead, stepFrames, trimAtPlayhead } from './actions';
+import { deleteSelection, selectAll, splitAtPlayhead, stepFrames, trimAtPlayhead } from './actions';
 import { computeSilenceCuts } from '@/lib/shared/cleanup';
 import { replaceCuts } from '@/lib/shared/edit';
 import { buildSegments, sequenceDuration, wordsInClip } from '@/lib/shared/timeline';
@@ -78,7 +78,7 @@ export function useMediaSync() {
           const after = m.separation?.status;
           if (before && before !== after && (before === 'running' || before === 'queued')) {
             if (after === 'done') {
-              now.toast(`Voz y música separadas en «${m.name}». Elige en su tarjeta qué quieres escuchar.`, 'success');
+              now.toast(`Voz y música separadas en «${m.name}». Elige qué quieres escuchar en la pestaña Audio.`, 'success');
             } else if (after === 'error') now.toast(`No se pudo separar «${m.name}»: ${m.separation.error ?? ''}`, 'error');
           }
           if (after) separationSeen.set(id, after);
@@ -269,6 +269,11 @@ export function useShortcuts(saveNow: () => void, openHelp: () => void) {
       if (mod && key === 's') {
         e.preventDefault();
         saveNow();
+        return;
+      }
+      if (mod && key === 'a') {
+        e.preventDefault();
+        selectAll();
         return;
       }
       if (mod || e.altKey) return;

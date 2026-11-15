@@ -11,9 +11,9 @@ import type { BrollItem, TextItem } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
 import { overlayRect } from '@/lib/shared/text-curve';
-import { useEditor } from '@/lib/client/store';
+import { selRefs, useEditor } from '@/lib/client/store';
 import { usePlayback } from '@/lib/client/player';
-import { updateItem } from '@/lib/client/actions';
+import { pickItems, updateItem, updateItems } from '@/lib/client/actions';
 import { loadTextFonts, renderText } from '@/lib/client/text-render';
 
 type Target = { kind: 'text'; item: TextItem } | { kind: 'broll'; item: BrollItem };
@@ -31,7 +31,11 @@ export function useStageGestures() {
     e.stopPropagation();
     e.preventDefault();
     const { kind, item } = target;
-    useEditor.getState().setSelection({ kind, id: item.id });
+    const { selection, doc, setSelection } = useEditor.getState();
+    // Dragging one of several selected elements moves them all; otherwise the element becomes the selection.
+    const inGroup = selection?.kind === 'multi' && selection.items.some((r) => r.kind === kind && r.id === item.id);
+    const group = inGroup && doc && mode === 'move' ? pickItems(doc, selRefs(selection)).filter((x) => x.kind !== 'audio') : [];
+    if (!inGroup) setSelection({ kind, id: item.id });
     const stage = stageEl.getBoundingClientRect();
     const x0 = item.x ?? 0.5;
     const y0 = item.y ?? 0.5;
@@ -44,7 +48,17 @@ export function useStageGestures() {
     const key = `${mode}:${item.id}:${Date.now()}`; // one undo step per gesture
 
     const move = (ev: PointerEvent) => {
-      if (mode === 'move') {
+      if (group.length > 1) {
+        const dx = (ev.clientX - e.clientX) / stage.width;
+        const dy = (ev.clientY - e.clientY) / stage.height;
+        updateItems(
+          group.map((g) => {
+            const it = g.item as { id: string; x?: number; y?: number };
+            return { kind: g.kind, id: it.id, patch: { x: (it.x ?? 0.5) + dx, y: (it.y ?? 0.5) + dy } };
+          }),
+          key,
+        );
+      } else if (mode === 'move') {
         let x = x0 + (ev.clientX - e.clientX) / stage.width;
         let y = y0 + (ev.clientY - e.clientY) / stage.height;
         // Snap to the centre of the frame, with guide lines.
@@ -136,6 +150,34 @@ export function StageItems({
   );
   const visible = new Set(visibleKey.split(','));
 
+  // Several elements selected: an outline on each one that is on screen now.
+  const multi = selection?.kind === 'multi' ? selRefs(selection) : [];
+  const multiTexts = new Set(multi.flatMap((r) => (r.kind === 'text' ? [r.id] : [])));
+  const multiOverlays = new Set(multi.flatMap((r) => (r.kind === 'broll' ? [r.id] : [])));
+  const shownOverlays = usePlayback((s) =>
+    broll
+      .filter((b) => multiOverlays.has(b.id) && s.time >= b.start - 1e-3 && s.time < b.start + b.duration)
+      .map((b) => b.id)
+      .join(','),
+  );
+  const outlines = [
+    ...texts
+      .filter((t) => multiTexts.has(t.id) && visible.has(t.id) && sizes[t.id])
+      .map((t) => ({
+        id: t.id,
+        left: t.x * OUTPUT_WIDTH - sizes[t.id].width / 2,
+        top: t.y * OUTPUT_HEIGHT - sizes[t.id].height / 2,
+        width: sizes[t.id].width,
+        height: sizes[t.id].height,
+      })),
+    ...broll
+      .filter((b) => shownOverlays.split(',').includes(b.id))
+      .map((b) => ({
+        id: b.id,
+        ...overlayRect(media[b.mediaId]?.width ?? 0, media[b.mediaId]?.height ?? 0, OUTPUT_WIDTH, OUTPUT_HEIGHT, b.x, b.y, b.scale),
+      })),
+  ];
+
   const selText = selection?.kind === 'text' ? texts.find((t) => t.id === selection.id) : undefined;
   const selOverlay = selection?.kind === 'broll' ? broll.find((b) => b.id === selection.id) : undefined;
   const overlayShown = usePlayback((s) => !!selOverlay && s.time >= selOverlay.start - 1e-3 && s.time < selOverlay.start + selOverlay.duration);
@@ -184,6 +226,14 @@ export function StageItems({
         ))}
       {guides?.x && <div className="pointer-events-none absolute inset-y-0 bg-accent" style={{ left: OUTPUT_WIDTH / 2 - px, width: 2 * px }} />}
       {guides?.y && <div className="pointer-events-none absolute inset-x-0 bg-accent" style={{ top: OUTPUT_HEIGHT / 2 - px, height: 2 * px }} />}
+      {outlines.map((o) => (
+        <div
+          key={o.id}
+          data-group-outline={o.id}
+          className="pointer-events-none absolute border-accent"
+          style={{ left: o.left, top: o.top, width: o.width, height: o.height, borderWidth: 2 * px, borderStyle: 'dashed' }}
+        />
+      ))}
       {box && (
         <div
           data-selection-box

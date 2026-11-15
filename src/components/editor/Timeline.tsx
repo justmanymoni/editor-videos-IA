@@ -7,7 +7,7 @@ import { FRAME, clamp } from '@/lib/shared/ranges';
 import { sequenceDuration, type Segment } from '@/lib/shared/timeline';
 import type { SubPage } from '@/lib/shared/subtitles';
 import { mediaUrl } from '@/lib/client/api';
-import { useEditor, type Selection } from '@/lib/client/store';
+import { refKey, selRefs, selectionOf, toggleRef, useEditor, type SelRef, type Selection } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
 import { player, usePlayback } from '@/lib/client/player';
 import { formatTime, mediaHue } from '@/lib/client/format';
@@ -16,7 +16,9 @@ import {
   addBroll,
   deleteSelection,
   insertClip,
+  moveItems,
   moveSegment,
+  pickItems,
   splitAtPlayhead,
   trimAtPlayhead,
   trimSegment,
@@ -27,6 +29,14 @@ import { IconButton, Slider } from '@/components/ui';
 import { MEDIA_DRAG_TYPE } from './ToolsPanel';
 
 const H = { toolbar: 40, ruler: 24, text: 30, subs: 28, broll: 44, main: 62, audio: 40 };
+/** Top of each track inside the scrolling area, for the selection box. */
+const ROW_TOP = {
+  text: H.ruler,
+  subs: H.ruler + H.text,
+  broll: H.ruler + H.text + H.subs,
+  main: H.ruler + H.text + H.subs + H.broll,
+  audio: H.ruler + H.text + H.subs + H.broll + H.main,
+};
 const EDGE = 7;
 const MIN_PPS = 4;
 const MAX_PPS = 400;
@@ -39,7 +49,13 @@ type Drag =
   | { kind: 'seg-move'; seg: Segment; x0: number; dx: number; moved: boolean; t0: number }
   | { kind: 'seg-trim'; seg: Segment; edge: 'start' | 'end'; x0: number; dx: number }
   | { kind: 'item-move'; track: ItemKind; id: string; x0: number; dx: number; moved: boolean; start: number }
-  | { kind: 'item-trim'; track: ItemKind; id: string; edge: 'start' | 'end'; x0: number; dx: number };
+  | { kind: 'item-trim'; track: ItemKind; id: string; edge: 'start' | 'end'; x0: number; dx: number }
+  /** Selection box drawn on an empty part of the tracks (content pixels). `base` is what was selected before, when adding. */
+  | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; moved: boolean; base: SelRef[] }
+  /** Several selected items dragged together; `dt` is the shift in seconds. */
+  | { kind: 'group-move'; x0: number; dx: number; moved: boolean; dt: number; anchor: SelRef & { id: string }; refs: SelRef[] };
+
+const additive = (e: React.PointerEvent) => e.shiftKey || e.ctrlKey || e.metaKey;
 
 function tickStep(pps: number) {
   for (const s of [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) if (s * pps >= 64) return s;
@@ -138,13 +154,15 @@ export function Timeline({ height }: { height: number }) {
   const pages = useSubtitlePages();
   const duration = sequenceDuration(segs);
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const [pps, setPps] = useState(60);
   const [drag, setDragState] = useState<Drag | null>(null);
   const [dropTrack, setDropTrack] = useState<'main' | 'broll' | 'audio' | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const fitted = useRef(false);
-  const live = useRef({ pps, segs, doc, media, duration });
-  live.current = { pps, segs, doc, media, duration };
+  const live = useRef({ pps, segs, doc, media, duration, pages });
+  live.current = { pps, segs, doc, media, duration, pages };
+  const selectedKeys = useMemo(() => new Set(selRefs(selection).map(refKey)), [selection]);
 
   const fit = useCallback(() => {
     const el = scroller.current;
@@ -184,12 +202,41 @@ export function Timeline({ height }: { height: number }) {
 
   const itemsOf = (track: ItemKind) => live.current.doc[LIST[track]] as Item[];
 
-  const snapPoints = (exclude?: string) => {
+  const snapPoints = (exclude: Set<string>) => {
     const { segs: s, doc: d } = live.current;
     const pts = [0, usePlayback.getState().time, sequenceDuration(s)];
     for (const seg of s) pts.push(seg.tlStart);
-    for (const b of [...d.broll, ...d.audio, ...d.texts]) if (b.id !== exclude) pts.push(b.start, b.start + b.duration);
+    for (const b of [...d.broll, ...d.audio, ...d.texts]) if (!exclude.has(b.id)) pts.push(b.start, b.start + b.duration);
     return pts;
+  };
+  /** Start for an item dragged to `start`, pulled to the nearest edge of another element. */
+  const snapItem = (start: number, length: number, pts: number[]) => {
+    const byStart = snap(start, pts);
+    return byStart !== start ? byStart : snap(start + length, pts) - length;
+  };
+
+  /** Pointer position inside the scrolling content, in pixels. */
+  const pointAt = (e: { clientX: number; clientY: number }) => {
+    const r = content.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  /** Every element touched by a box drawn on the tracks. */
+  const elementsIn = (ax: number, ay: number, bx: number, by: number): SelRef[] => {
+    const { pps: p, segs: sg, doc: d, pages: pg } = live.current;
+    const from = Math.min(ax, bx) / p;
+    const to = Math.max(ax, bx) / p;
+    const top = Math.min(ay, by);
+    const bottom = Math.max(ay, by);
+    const row = (k: keyof typeof ROW_TOP) => top < ROW_TOP[k] + H[k] && bottom > ROW_TOP[k];
+    const over = (start: number, end: number) => start < to && end > from;
+    const out: SelRef[] = [];
+    if (row('text')) for (const x of d.texts) if (over(x.start, x.start + x.duration)) out.push({ kind: 'text', id: x.id });
+    if (row('subs') && d.subtitles.enabled) for (const x of pg) if (over(x.start, x.end)) out.push({ kind: 'subtitle', page: x.index });
+    if (row('broll')) for (const x of d.broll) if (over(x.start, x.start + x.duration)) out.push({ kind: 'broll', id: x.id });
+    if (row('main')) for (const x of sg) if (over(x.tlStart, x.tlEnd)) out.push({ kind: 'segment', clipId: x.clipId, rangeIndex: x.rangeIndex });
+    if (row('audio')) for (const x of d.audio) if (over(x.start, x.start + x.duration)) out.push({ kind: 'audio', id: x.id });
+    return out;
   };
   const snap = (t: number, pts: number[]) => {
     let best = t;
@@ -217,6 +264,14 @@ export function Timeline({ height }: { height: number }) {
         player.pause();
         player.seek(d.t0);
       }
+    } else if (d.kind === 'marquee' && !d.moved) {
+      // A plain click on an empty part: drop the selection and move the playhead there, stopped.
+      if (!d.base.length) useEditor.getState().setSelection(null);
+      player.pause();
+      player.seek(d.x0 / p);
+    } else if (d.kind === 'group-move') {
+      if (d.moved) moveItems(d.refs, d.dt);
+      else useEditor.getState().setSelection(d.anchor);
     } else if (d.kind === 'item-move' && d.moved) {
       updateItem(d.track, d.id, { start: Math.max(0, d.start) });
     } else if (d.kind === 'item-trim' && Math.abs(d.dx) > 1) {
@@ -232,15 +287,28 @@ export function Timeline({ height }: { height: number }) {
       const d = dragRef.current;
       if (!d) return;
       if (d.kind === 'scrub') return player.seek(timeAt(e.clientX));
+      if (d.kind === 'marquee') {
+        const pt = pointAt(e);
+        const moved = d.moved || Math.hypot(pt.x - d.x0, pt.y - d.y0) > 4;
+        if (moved) useEditor.getState().setSelection(selectionOf([...d.base, ...elementsIn(d.x0, d.y0, pt.x, pt.y)]));
+        return setDrag({ ...d, x1: pt.x, y1: pt.y, moved });
+      }
       const dx = e.clientX - d.x0;
-      if (d.kind === 'item-move') {
+      if (d.kind === 'group-move') {
+        const items = pickItems(live.current.doc, d.refs);
+        if (!items.length) return;
+        const floor = -Math.min(...items.map((x) => x.item.start));
+        let dt = Math.max(dx / live.current.pps, floor);
+        const anchor = items.find((x) => x.item.id === d.anchor.id)?.item;
+        if (anchor) {
+          const pts = snapPoints(new Set(items.map((x) => x.item.id)));
+          dt = Math.max(snapItem(anchor.start + dt, anchor.duration, pts) - anchor.start, floor);
+        }
+        setDrag({ ...d, dx, dt, moved: d.moved || Math.abs(dx) > 3 });
+      } else if (d.kind === 'item-move') {
         const item = itemsOf(d.track).find((x) => x.id === d.id);
         if (!item) return;
-        const pts = snapPoints(d.id);
-        let start = Math.max(0, item.start + dx / live.current.pps);
-        const snappedStart = snap(start, pts);
-        const snappedEnd = snap(start + item.duration, pts) - item.duration;
-        start = snappedStart !== start ? snappedStart : snappedEnd;
+        const start = snapItem(Math.max(0, item.start + dx / live.current.pps), item.duration, snapPoints(new Set([d.id])));
         setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 3, start: Math.max(0, start) });
       } else if (d.kind === 'seg-move') setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 4 });
       else setDrag({ ...d, dx });
@@ -266,7 +334,9 @@ export function Timeline({ height }: { height: number }) {
   const onSegDown = (e: React.PointerEvent, seg: Segment) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    select({ kind: 'segment', clipId: seg.clipId, rangeIndex: seg.rangeIndex });
+    const ref: SelRef = { kind: 'segment', clipId: seg.clipId, rangeIndex: seg.rangeIndex };
+    if (additive(e)) return select(toggleRef(useEditor.getState().selection, ref));
+    select(ref);
     const edge = edgeOf(e, e.currentTarget as HTMLElement);
     if (edge) setDrag({ kind: 'seg-trim', seg, edge, x0: e.clientX, dx: 0 });
     else setDrag({ kind: 'seg-move', seg, x0: e.clientX, dx: 0, moved: false, t0: timeAt(e.clientX) });
@@ -275,19 +345,45 @@ export function Timeline({ height }: { height: number }) {
   const onItemDown = (e: React.PointerEvent, track: ItemKind, item: Item) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    select({ kind: track, id: item.id });
+    const ref: SelRef & { id: string } = { kind: track, id: item.id };
+    const sel = useEditor.getState().selection;
+    if (additive(e)) return select(toggleRef(sel, ref));
+    // Dragging one of several selected items moves them all; a plain click keeps only that one.
+    if (sel?.kind === 'multi' && sel.items.some((r) => refKey(r) === refKey(ref))) {
+      return setDrag({ kind: 'group-move', x0: e.clientX, dx: 0, moved: false, dt: 0, anchor: ref, refs: sel.items });
+    }
+    select(ref);
     const edge = edgeOf(e, e.currentTarget as HTMLElement);
     if (edge) setDrag({ kind: 'item-trim', track, id: item.id, edge, x0: e.clientX, dx: 0 });
     else setDrag({ kind: 'item-move', track, id: item.id, x0: e.clientX, dx: 0, moved: false, start: item.start });
   };
 
-  const onEmptyDown = (e: React.PointerEvent) => {
+  const onSubDown = (e: React.PointerEvent, page: SubPage) => {
     if (e.button !== 0) return;
-    select(null);
+    e.stopPropagation();
+    const ref: SelRef = { kind: 'subtitle', page: page.index };
+    if (additive(e)) return select(toggleRef(useEditor.getState().selection, ref));
+    select(ref);
+    // Seek to the clicked point so S can split the block right there.
+    const r = e.currentTarget.getBoundingClientRect();
+    player.seek(page.start + ((e.clientX - r.left) / Math.max(1, r.width)) * (page.end - page.start));
+  };
+
+  /** The ruler moves the playhead. The selection is kept, so several elements can then be split or trimmed there. */
+  const onRulerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     // Moving the playhead stops playback: the video stays where it is dropped.
     player.pause();
     player.seek(timeAt(e.clientX));
     setDrag({ kind: 'scrub' });
+  };
+
+  /** An empty part of a track: a click moves the playhead, dragging draws a box that selects what it touches. */
+  const onEmptyDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const pt = pointAt(e);
+    const base = additive(e) ? selRefs(useEditor.getState().selection) : [];
+    setDrag({ kind: 'marquee', x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, moved: false, base });
   };
 
   /** Media dragged from the panel: videos and photos go to the main or overlay track, audio to the audio track. */
@@ -353,7 +449,7 @@ export function Timeline({ height }: { height: number }) {
           env={track === 'audio' && 'mediaId' in item ? envelopes[item.mediaId] : undefined}
           pps={pps}
           drag={drag}
-          selected={selection?.kind === track && selection.id === item.id}
+          selected={selectedKeys.has(`${track}:${item.id}`)}
           onDown={onItemDown}
         />
       ))}
@@ -378,7 +474,9 @@ export function Timeline({ height }: { height: number }) {
         </IconButton>
         <div className="mx-2 h-5 w-px bg-line" />
         <span className="min-w-0 flex-1 truncate text-[11px] text-faint">
-          Selecciona un elemento y usa los botones · arrastra los bordes para recortar · arrastra para mover · Ctrl + rueda para zoom
+          {selectedKeys.size > 1
+            ? `${selectedKeys.size} elementos seleccionados · arrastra uno para moverlos todos · Supr los elimina`
+            : 'Arrastra en un hueco para seleccionar varios elementos · Ctrl + clic añade o quita · arrastra los bordes para recortar'}
         </span>
         <IconButton label="Alejar" onClick={() => setPps((p) => clamp(p / 1.4, MIN_PPS, MAX_PPS))}>
           <ZoomOut size={15} />
@@ -403,8 +501,8 @@ export function Timeline({ height }: { height: number }) {
           <TrackLabel icon={Music} label="Audio" height={H.audio} />
         </div>
         <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ minHeight: tracksHeight + 12 }}>
-          <div className="relative" style={{ width, height: tracksHeight }}>
-            <div className="relative cursor-ew-resize border-b border-line bg-panel-2" style={{ height: H.ruler }} onPointerDown={onEmptyDown}>
+          <div ref={content} className="relative" style={{ width, height: tracksHeight }}>
+            <div className="relative cursor-ew-resize border-b border-line bg-panel-2" style={{ height: H.ruler }} onPointerDown={onRulerDown}>
               {ticks.map((t) => (
                 <div key={t} className="absolute top-0 h-full border-l border-line-strong" style={{ left: t * pps }}>
                   <span className="absolute top-1 left-1 font-mono text-[10px] text-faint">{formatTime(t, step < 1)}</span>
@@ -416,9 +514,7 @@ export function Timeline({ height }: { height: number }) {
 
             <div data-track="subs" className="relative border-b border-line" style={{ height: H.subs }} onPointerDown={onEmptyDown}>
               {doc.subtitles.enabled &&
-                pages.map((p) => (
-                  <SubBlock key={p.index} page={p} pps={pps} selected={selection?.kind === 'subtitle' && selection.page === p.index} />
-                ))}
+                pages.map((p) => <SubBlock key={p.index} page={p} pps={pps} selected={selectedKeys.has(`subtitle:${p.index}`)} onDown={onSubDown} />)}
             </div>
 
             {itemTrack('broll', doc.broll, 'Arrastra aquí vídeos o fotos para superponerlos', dropHandlers('broll'))}
@@ -432,7 +528,7 @@ export function Timeline({ height }: { height: number }) {
             >
               {segs.map((seg) => {
                 const m = media[seg.mediaId];
-                const selected = selection?.kind === 'segment' && selection.clipId === seg.clipId && selection.rangeIndex === seg.rangeIndex;
+                const selected = selectedKeys.has(`segment:${seg.clipId}:${seg.rangeIndex}`);
                 let left = seg.tlStart * pps;
                 let w = (seg.tlEnd - seg.tlStart) * pps;
                 let from = seg.srcStart;
@@ -518,6 +614,18 @@ export function Timeline({ height }: { height: number }) {
 
             {itemTrack('audio', doc.audio, 'Arrastra aquí música, o graba tu voz en la pestaña Audio', dropHandlers('audio'))}
 
+            {drag?.kind === 'marquee' && drag.moved && (
+              <div
+                data-marquee
+                className="pointer-events-none absolute z-30 rounded-sm border border-accent bg-accent/10"
+                style={{
+                  left: Math.min(drag.x0, drag.x1),
+                  top: Math.min(drag.y0, drag.y1),
+                  width: Math.abs(drag.x1 - drag.x0),
+                  height: Math.abs(drag.y1 - drag.y0),
+                }}
+              />
+            )}
             <Playhead pps={pps} scroller={scroller} />
           </div>
         </div>
@@ -553,6 +661,7 @@ function ItemBlock({
 }) {
   let { start, duration } = item;
   let srcIn = 'srcIn' in item ? item.srcIn : 0;
+  if (drag?.kind === 'group-move' && drag.moved && selected) start = Math.max(0, start + drag.dt);
   if (drag && 'id' in drag && drag.id === item.id) {
     if (drag.kind === 'item-move' && drag.moved) start = drag.start;
     if (drag.kind === 'item-trim') {
@@ -596,16 +705,21 @@ function ItemBlock({
   );
 }
 
-function SubBlock({ page, pps, selected }: { page: SubPage; pps: number; selected: boolean }) {
+function SubBlock({
+  page,
+  pps,
+  selected,
+  onDown,
+}: {
+  page: SubPage;
+  pps: number;
+  selected: boolean;
+  onDown: (e: React.PointerEvent, page: SubPage) => void;
+}) {
   return (
     <div
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        useEditor.getState().setSelection({ kind: 'subtitle', page: page.index });
-        // Seek to the clicked point so S can split the block right there.
-        const r = e.currentTarget.getBoundingClientRect();
-        player.seek(page.start + ((e.clientX - r.left) / Math.max(1, r.width)) * (page.end - page.start));
-      }}
+      data-sub={page.index}
+      onPointerDown={(e) => onDown(e, page)}
       className={clsx(
         'absolute top-1 bottom-1 cursor-pointer overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-semibold whitespace-nowrap',
         selected ? 'z-10 border-accent bg-accent/30 text-fg' : 'border-accent/25 bg-accent/10 text-accent/90 hover:bg-accent/20',

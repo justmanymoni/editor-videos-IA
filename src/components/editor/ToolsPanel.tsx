@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import {
   AlertTriangle,
   AudioLines,
+  FileText,
   Film,
   FolderOpen,
   Image as ImageIcon,
@@ -24,7 +25,7 @@ import {
 import type { MediaInfo } from '@/lib/shared/types';
 import { suggestBroll } from '@/lib/shared/suggest';
 import { api, mediaUrl } from '@/lib/client/api';
-import { useEditor } from '@/lib/client/store';
+import { useEditor, type ToolsTab } from '@/lib/client/store';
 import { useClipWords } from '@/lib/client/derived';
 import { usePlayback } from '@/lib/client/player';
 import { useRecorder } from '@/lib/client/recorder';
@@ -40,33 +41,34 @@ import {
   uploadClips,
   uploadResources,
 } from '@/lib/client/actions';
-import { Button, IconButton, ProgressBar, Segmented } from '@/components/ui';
+import { Button, IconButton, ProgressBar, Segmented, SliderRow } from '@/components/ui';
 import { TextTab } from './TextTab';
+import { TranscriptPanel } from './TranscriptPanel';
 
 export const MEDIA_DRAG_TYPE = 'application/x-verticut-media';
 
-type Tab = 'media' | 'audio' | 'text';
-
-const TABS = [
+const TABS: [ToolsTab, string, typeof Film][] = [
   ['media', 'Multimedia', Film],
   ['audio', 'Audio', Music],
   ['text', 'Texto', Type],
-] as const;
+  ['transcript', 'Transcripción', FileText],
+];
 
 /** Left panel, CapCut style: tool tabs on top, their content below. */
 export function ToolsPanel() {
-  const [tab, setTab] = useState<Tab>('media');
+  const tab = useEditor((s) => s.toolsTab);
   return (
     <aside className="flex h-full min-w-0 flex-col bg-panel">
-      <div className="flex shrink-0 gap-1 border-b border-line px-2 py-1.5">
+      <div className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5">
         {TABS.map(([id, label, Icon]) => (
           <button
             key={id}
-            onClick={() => setTab(id)}
+            data-tool-tab={id}
+            onClick={() => useEditor.getState().set({ toolsTab: id })}
             onMouseUp={(e) => e.currentTarget.blur()}
             className={clsx(
-              'flex min-w-16 flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
-              tab === id ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-panel-3 hover:text-fg',
+              'flex min-w-14 shrink-0 flex-col items-center gap-0.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors',
+              tab === id ? 'text-accent' : 'text-muted hover:bg-panel-3 hover:text-fg',
             )}
           >
             <Icon size={17} /> {label}
@@ -77,6 +79,7 @@ export function ToolsPanel() {
         {tab === 'media' && <MediaTab />}
         {tab === 'audio' && <AudioTab />}
         {tab === 'text' && <TextTab />}
+        {tab === 'transcript' && <TranscriptPanel />}
       </div>
     </aside>
   );
@@ -214,13 +217,7 @@ export function AudioControls({ media }: { media: MediaInfo }) {
   if (sep.status === 'none' || sep.status === 'error') {
     return (
       <div className="flex flex-col gap-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="self-start px-1.5"
-          onClick={start}
-          title="Separa la voz de la música de fondo para quitar una de las dos"
-        >
+        <Button size="sm" className="self-start" onClick={start} title="Separa la voz de la música de fondo para quitar una de las dos">
           <AudioLines size={12} /> Separar voz y música
         </Button>
         {sep.status === 'error' && <p className="line-clamp-3 text-[11px] whitespace-pre-line text-danger">{sep.error}</p>}
@@ -242,7 +239,7 @@ export function AudioControls({ media }: { media: MediaInfo }) {
   const preset = !mix ? 'original' : voice > 0 && music === 0 ? 'voice' : voice === 0 && music > 0 ? 'music' : 'custom';
   const preparing = !!mix && !mixUrl?.endsWith(`v=${voice}&m=${music}`);
   return (
-    <div className="mt-1 flex flex-col gap-1.5 rounded-md border border-line bg-panel p-2">
+    <div className="flex flex-col gap-1.5">
       <Segmented
         value={preset}
         onChange={(v) =>
@@ -254,18 +251,26 @@ export function AudioControls({ media }: { media: MediaInfo }) {
           { value: 'music', label: 'Sin voz' },
         ]}
       />
-      {(
-        [
-          ['Voz', voice, (v: number) => setMix(media.id, v, music, `mix-v:${media.id}`)],
-          ['Música', music, (v: number) => setMix(media.id, voice, v, `mix-m:${media.id}`)],
-        ] as const
-      ).map(([label, value, set]) => (
-        <label key={label} className="flex items-center gap-2 text-[11px] text-muted">
-          <span className="w-10">{label}</span>
-          <input type="range" min={0} max={1} step={0.05} value={value} onChange={(e) => set(Number(e.target.value))} className="min-w-0 flex-1" />
-          <span className="w-8 text-right tabular-nums">{Math.round(value * 100)}%</span>
-        </label>
-      ))}
+      <SliderRow
+        label="Voz"
+        value={voice}
+        min={0}
+        max={1}
+        step={0.05}
+        scale={100}
+        unit="%"
+        onChange={(v) => setMix(media.id, v, music, `mix-v:${media.id}`)}
+      />
+      <SliderRow
+        label="Música"
+        value={music}
+        min={0}
+        max={1}
+        step={0.05}
+        scale={100}
+        unit="%"
+        onChange={(v) => setMix(media.id, voice, v, `mix-m:${media.id}`)}
+      />
       {preparing && (
         <span className="flex items-center gap-1 text-[11px] text-faint">
           <Loader2 size={11} className="animate-spin" /> Preparando la mezcla para la vista previa…
@@ -344,7 +349,15 @@ function MediaTab() {
             </p>
             <MediaStatus media={m} />
             {m.kind === 'video' && <TranscriptStatus media={m} />}
-            {m.hasAudio && m.status !== 'error' && <AudioControls media={m} />}
+            {m.kind === 'video' && m.hasAudio && m.status !== 'error' && (
+              <button
+                className="flex items-center gap-1 self-start text-[11px] text-muted hover:text-accent"
+                onClick={() => useEditor.getState().set({ inspectorTab: 'audio' })}
+                title="Los ajustes de voz y música están en la pestaña Audio, a la derecha"
+              >
+                <AudioLines size={11} /> Voz y música
+              </button>
+            )}
           </div>
         </div>
       ))}

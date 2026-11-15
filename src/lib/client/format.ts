@@ -1,4 +1,16 @@
 /** "1:05.3" style time for the editor UI. */
+/** "Hoy, 14:32", "Ayer, 9:05" or "12 nov, 14:32": when a project was last changed. */
+export function formatUpdated(iso: string, now = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const time = date.toLocaleTimeString('es-ES', { hour: 'numeric', minute: '2-digit' });
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (days === 0) return `Hoy, ${time}`;
+  if (days === 1) return `Ayer, ${time}`;
+  return `${date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}, ${time}`;
+}
+
 export function formatTime(t: number, precise = true): string {
   const s = Math.max(0, t);
   const m = Math.floor(s / 60);

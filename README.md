@@ -10,25 +10,26 @@ Next.js 16 + TypeScript + Tailwind 4 · FFmpeg · whisper.cpp local.
 
 ## Qué hace
 
-| Función                | Detalle                                                                                                                                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interfaz tipo CapCut   | Herramientas a la izquierda (Multimedia, Audio, Texto), reproductor en el centro o a la derecha, propiedades a su lado y línea de tiempo abajo. Todos los paneles se redimensionan arrastrando sus bordes.                |
-| Importar               | Vídeos, fotos y audio, arrastrándolos o con el botón **+**. Los vídeos se colocan solos en la pista principal; las fotos pueden ir en la pista principal o encima como superposición.                                     |
-| Silencios automáticos  | Al subir un clip se le quitan solos los silencios de más de 0,4 s (analizando el audio y los huecos de la transcripción). Se puede desactivar y deshacer.                                                                 |
-| Transcripción local    | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                      |
-| Subtítulos automáticos | Palabra a palabra, con estilos rápidos y 37 fuentes (negritas, normales, cursivas, clásicas, manuscritas). Se **arrastran en el vídeo** y se editan con **doble clic**. Resaltado de la palabra y animaciones opcionales. |
-| Textos manuales        | Escribe o **dicta** un texto y colócalo donde quieras: arrástralo, cámbiale el tamaño, gíralo o cúrvalo (arco, círculo, onda). Las barras `/` lo separan en bloques independientes.                                       |
-| Tu voz                 | Botón **Grabar mi voz**: la grabación se añade a la pista de audio donde está el cursor.                                                                                                                                  |
-| Cortar                 | Dividir (S), borrar lo que queda a la izquierda (Q) o a la derecha (W) del cursor y eliminar (Supr) cualquier elemento: clip, texto, subtítulo, audio o superposición.                                                    |
-| Edición por texto      | En la pestaña Transcripción, selecciona palabras y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar.                     |
-| Auto-limpiar           | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                         |
-| Tu guión               | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                          |
-| Separar voz y música   | Separa la voz de la música de fondo de cada clip con IA local (sin API) para quitar la música, quitar la voz o ajustar el volumen de cada una.                                                                            |
-| Texto descargable      | La transcripción queda en el panel derecho: cópiala o descárgala en TXT, o como subtítulos SRT con tiempos.                                                                                                               |
-| Superposiciones        | Fotos, vídeos y pegatinas (PNG con transparencia) encima del vídeo: se mueven y se cambian de tamaño en el propio reproductor. Sugerencias de B-roll según lo que dices.                                                  |
-| Exportar               | MP4 H.264 1080×1920 a 30 fps con subtítulos, textos y superposiciones incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                 |
-| Proyecto               | Autoguardado en JSON. Descarga e importación del JSON. Deshacer/rehacer.                                                                                                                                                  |
-| Actualización sola     | Abriendo la app con `Verticut.bat` se descargan e instalan solas las novedades de GitHub. Ver [Actualización automática](#actualización-automática).                                                                      |
+| Función                | Detalle                                                                                                                                                                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interfaz tipo CapCut   | Herramientas a la izquierda (Multimedia, Audio, Texto, Transcripción), reproductor en el centro o a la derecha y, a su lado, los ajustes en pestañas (Vídeo, Audio, Subtítulos, Animación). Línea de tiempo abajo. Todos los paneles se redimensionan arrastrando sus bordes. |
+| Importar               | Vídeos, fotos y audio, arrastrándolos o con el botón **+**. Los vídeos se colocan solos en la pista principal; las fotos pueden ir en la pista principal o encima como superposición.                                                                                         |
+| Silencios automáticos  | Al subir un clip se le quitan solos los silencios de más de 0,4 s (analizando el audio y los huecos de la transcripción). Se puede desactivar y deshacer.                                                                                                                     |
+| Transcripción local    | Voz a texto con marcas de tiempo por palabra, en tu ordenador, gratis y sin internet una vez instalada. Idioma por defecto: español.                                                                                                                                          |
+| Subtítulos automáticos | Se crean solos con la voz, **palabra a palabra o cada 2, 3… palabras** (lo eliges). Estilos rápidos y 37 fuentes con **buscador**. Se **arrastran en el vídeo** y se editan con **doble clic**. Resaltado de la palabra y animaciones con miniatura.                          |
+| Textos manuales        | Escribe o **dicta** un texto y colócalo donde quieras: arrástralo, cámbiale el tamaño, gíralo o cúrvalo (arco, círculo, onda). Se separa en bloques con barras `/` o solo, cada 1, 2 o 3 palabras.                                                                            |
+| Tu voz                 | Botón **Grabar mi voz**: la grabación se añade a la pista de audio donde está el cursor.                                                                                                                                                                                      |
+| Cortar                 | Dividir (S), borrar lo que queda a la izquierda (Q) o a la derecha (W) del cursor y eliminar (Supr) cualquier elemento: clip, texto, subtítulo, audio o superposición.                                                                                                        |
+| Selección múltiple     | Arrastra un recuadro en la línea de tiempo (o Ctrl + clic, o Ctrl + A) para seleccionar varios elementos y moverlos, borrarlos, dividirlos o cambiarles fuente, color, tamaño y duración **a todos a la vez**.                                                                |
+| Edición por texto      | En la pestaña Transcripción, selecciona palabras y pulsa **Supr**: el corte se aplica al vídeo, a la línea de tiempo y a los subtítulos. Las palabras cortadas se ven tachadas y se pueden restaurar.                                                                         |
+| Auto-limpiar           | **Silencios**, **muletillas** (eh, mm, o sea… lista editable) y **tomas repetidas**, quedándose con la última toma de cada frase.                                                                                                                                             |
+| Tu guión               | Pega el guión que has escrito y se sincroniza con tu voz: los subtítulos usan exactamente tus palabras, ortografía y puntuación.                                                                                                                                              |
+| Separar voz y música   | Separa la voz de la música de fondo de cada clip con IA local (sin API) para quitar la música, quitar la voz o ajustar el volumen de cada una.                                                                                                                                |
+| Texto descargable      | La transcripción queda en el panel derecho: cópiala o descárgala en TXT, o como subtítulos SRT con tiempos.                                                                                                                                                                   |
+| Superposiciones        | Fotos, vídeos y pegatinas (PNG con transparencia) encima del vídeo: se mueven y se cambian de tamaño en el propio reproductor. Sugerencias de B-roll según lo que dices.                                                                                                      |
+| Exportar               | MP4 H.264 1080×1920 a 30 fps con subtítulos, textos y superposiciones incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                                                                     |
+| Proyecto               | Pantalla de inicio con los proyectos en cuadrícula, cada uno con su miniatura. Autoguardado en JSON, importación y exportación, duplicar, renombrar. Deshacer/rehacer.                                                                                                        |
+| Actualización sola     | Abriendo la app con `Verticut.bat` se descargan e instalan solas las novedades de GitHub. Ver [Actualización automática](#actualización-automática).                                                                                                                          |
 
 ## Requisitos
 
@@ -121,7 +122,7 @@ Whisper tiende a «limpiar» las vacilaciones y a no escribir «eh» o «mm». P
 
 ## Separar la voz de la música
 
-En la tarjeta de cada clip (panel izquierdo) pulsa **Separar voz y música**. La primera vez se descarga el modelo de separación (unos 64 MB, una sola vez); después funciona sin internet. Al terminar puedes elegir:
+En la pestaña **Audio** del panel derecho, pulsa **Separar voz y música** en el clip que quieras. La primera vez se descarga el modelo de separación (unos 64 MB, una sola vez); después funciona sin internet. Al terminar puedes elegir:
 
 - **Original**: el audio tal cual.
 - **Sin música**: solo la voz.
@@ -135,15 +136,16 @@ Cómo funciona: se usa el modelo MDX-Net «Kim_Vocal_2» de [Ultimate Vocal Remo
 ## Flujo de trabajo
 
 1. **Importa**: arrastra vídeos, fotos o audio a la ventana o a la pestaña _Multimedia_. Los vídeos se añaden a la pista principal, se transcriben en segundo plano y **se les quitan los silencios automáticamente** (desactivable en los ajustes de «Auto-limpiar»). Con el **+** de cada archivo, o arrastrándolo a una pista, lo colocas donde quieras.
-2. **Corta**: mueve el cursor amarillo y usa los botones de la línea de tiempo: _Dividir_ (S), _Borrar izquierda_ (Q), _Borrar derecha_ (W) y _Eliminar_ (Supr). Arrastra los bordes de un clip para recortarlo y el clip entero para moverlo.
-3. **Subtítulos** (pestaña _Subtítulos_, a la derecha): elige un estilo rápido o ajusta fuente, tamaño, colores, contorno, sombra, palabras por bloque y mayúsculas.
+2. **Corta**: mueve el cursor amarillo (en la regla de arriba) y usa los botones de la línea de tiempo: _Dividir_ (S), _Borrar izquierda_ (Q), _Borrar derecha_ (W) y _Eliminar_ (Supr). Arrastra los bordes de un clip para recortarlo y el clip entero para moverlo.
+   - **Varios a la vez**: arrastra en un hueco de las pistas para dibujar un recuadro; todo lo que toque queda seleccionado. Ctrl + clic añade o quita un elemento y Ctrl + A lo selecciona todo. Arrastrando uno se mueven todos, Supr los borra y en la pestaña de la derecha cambias su fuente, color, tamaño o duración de una vez.
+3. **Subtítulos** (pestaña _Subtítulos_, a la derecha): en _Separación_ eliges si salen palabra a palabra o cada 2, 3… palabras. Elige un estilo rápido o ajusta fuente (el desplegable tiene buscador), tamaño, colores, contorno, sombra y mayúsculas.
    - **Moverlos**: arrástralos en el propio vídeo. **Cambiar su texto**: doble clic sobre el subtítulo en el vídeo.
    - **Resaltar la palabra mientras se dice**: se puede apagar, o cambiar el color.
-   - **Animación** de entrada y de salida: desvanecer, deslizar (izquierda, derecha, arriba, abajo), zoom, rebote, desenfoque, giro, máquina de escribir y caída de letras.
+   - **Animación** (pestaña _Animación_, cada una con su miniatura en movimiento): desvanecer, deslizar (izquierda, derecha, arriba, abajo), zoom, rebote, desenfoque, giro, máquina de escribir y caída de letras.
    - **Usar mi guión**: pega lo que escribiste y se sincroniza con tu voz.
-4. **Textos** (pestaña _Texto_, a la izquierda): escribe el texto o pulsa **Dictar** para decirlo con el micrófono, y _Añadir_. Con barras se crean varios bloques seguidos: `el lobo / enfurecido / está en el bosque` son tres. Cada bloque se arrastra en el vídeo, se estira por las esquinas, se gira con el asa redonda y en _Propiedades_ se elige su duración, fuente, color y forma (recto, arco, círculo, onda).
-5. **Audio** (pestaña _Audio_): importa música o pulsa **Grabar mi voz**. En la tarjeta de cada clip, _Separar voz y música_ permite quitar la música de fondo o la voz.
-6. **Transcripción** (pestaña _Transcripción_): es el texto de lo que se dice en el vídeo. Selecciona palabras y pulsa Supr para cortarlas del vídeo, usa _Muletillas_, _Tomas repetidas_ o _Limpiar todo_, y copia o descarga el texto (_Copiar_, _TXT_, _SRT_). Si el vídeo no está en español, elige ahí el idioma (o «Detectar») y vuelve a transcribir.
+4. **Textos** (pestaña _Texto_, a la izquierda): escribe el texto o pulsa **Dictar** para decirlo con el micrófono, y _Añadir_. Con barras se crean varios bloques seguidos: `el lobo / enfurecido / está en el bosque` son tres; o elige que se separe solo cada 1, 2 o 3 palabras. Los bloques nuevos quedan seleccionados para darles estilo a todos de una vez. Cada bloque se arrastra en el vídeo, se estira por las esquinas, se gira con el asa redonda y en _Propiedades_ se elige su duración, fuente, color y forma (recto, arco, círculo, onda).
+5. **Audio**: en la pestaña _Audio_ de la izquierda importas música o pulsas **Grabar mi voz**. En la pestaña _Audio_ de la derecha está el volumen del vídeo y, para cada clip, _Separar voz y música_ con sus deslizadores.
+6. **Transcripción** (pestaña _Transcripción_, a la izquierda): es el texto de lo que se dice en el vídeo. Selecciona palabras y pulsa Supr para cortarlas del vídeo, usa _Muletillas_, _Tomas repetidas_ o _Limpiar todo_, y copia o descarga el texto (_Copiar_, _TXT_, _SRT_). Si el vídeo no está en español, elige ahí el idioma (o «Detectar») y vuelve a transcribir.
 7. **Exporta**: botón _Exportar_ → calidad → _Exportar MP4_. Al terminar puedes verlo y descargarlo. Los archivos quedan en `storage/exports/`.
 
 Los botones de la barra superior colocan el reproductor **en el centro** o **a la derecha**; arrastrando los bordes entre paneles cambias su tamaño (y el botón de la flecha circular lo restablece).
@@ -159,6 +161,9 @@ Colores del texto tachado en la transcripción: rojo = corte manual, naranja = m
 | Q                           | Borrar lo que queda a la izquierda del cursor                                   |
 | W                           | Borrar lo que queda a la derecha del cursor                                     |
 | Supr / Retroceso            | Eliminar la selección (palabras, clip, texto, superposición, audio o subtítulo) |
+| Arrastrar en un hueco       | Seleccionar varios elementos con un recuadro                                    |
+| Ctrl + clic / Shift + clic  | Añadir o quitar un elemento de la selección                                     |
+| Ctrl + A                    | Seleccionar todo                                                                |
 | Ctrl + Z                    | Deshacer                                                                        |
 | Ctrl + Shift + Z / Ctrl + Y | Rehacer                                                                         |
 | ← / →                       | Fotograma anterior / siguiente (con Shift, un segundo)                          |

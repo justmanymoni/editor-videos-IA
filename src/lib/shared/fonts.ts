@@ -3,6 +3,8 @@
  * @font-face) and by FFmpeg/libass on export, so both renders match.
  * Metrics come from `node scripts/font-info.mjs` (kept in sync by a test).
  */
+import { normalizeSearch } from './text';
+
 export interface SubtitleFont {
   id: string;
   label: string;
@@ -415,3 +417,13 @@ export const lineHeightFactor = (font: SubtitleFont) => (font.winAscent + font.w
  * whereas CSS font-size is the em size. Converts CSS px → ASS Fontsize.
  */
 export const assFontSize = (font: SubtitleFont, cssPx: number) => cssPx * lineHeightFactor(font);
+
+/** Fonts whose name or style contains every word typed in a search box (accents and case are ignored). */
+export function searchFonts(query: string): SubtitleFont[] {
+  const words = normalizeSearch(query).split(' ').filter(Boolean);
+  if (!words.length) return SUBTITLE_FONTS;
+  return SUBTITLE_FONTS.filter((f) => {
+    const haystack = normalizeSearch(`${f.label} ${f.group}`);
+    return words.every((w) => haystack.includes(w));
+  });
+}

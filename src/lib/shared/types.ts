@@ -268,6 +268,8 @@ export interface ProjectSummary {
   createdAt: string;
   updatedAt: string;
   clipCount: number;
+  /** Media whose thumbnail represents the project: its first clip. */
+  thumbMediaId: string | null;
 }
 
 export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup' | 'separate' | 'mix';

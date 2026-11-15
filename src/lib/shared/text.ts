@@ -9,12 +9,41 @@ export function normalizeWord(text: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
+/** Lowercase without accents, with single spaces: for matching what the user types in a search box. */
+export function normalizeSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
 /** normalizeWord + collapses repeated letters ("mmmm" → "m", "ehhh" → "eh"). */
 export function fillerForm(text: string): string {
   return normalizeWord(text).replace(/(\p{L})\1+/gu, '$1');
 }
 
 export const endsSentence = (text: string) => /[.!?…]["»”)]*$/.test(text.trim());
+
+/**
+ * Blocks of a typed or dictated text. A slash always starts a new block;
+ * with `wordsPerBlock` > 0 every block is also cut every so many words.
+ */
+export function splitTextBlocks(raw: string, wordsPerBlock = 0): string[] {
+  const out: string[] = [];
+  for (const part of raw.split('/')) {
+    const text = part.trim();
+    if (!text) continue;
+    if (wordsPerBlock <= 0) {
+      out.push(text);
+      continue;
+    }
+    const words = text.split(/\s+/);
+    for (let i = 0; i < words.length; i += wordsPerBlock) out.push(words.slice(i, i + wordsPerBlock).join(' '));
+  }
+  return out;
+}
 
 export function levenshtein<T>(a: T[], b: T[]): number {
   const prev = new Array(b.length + 1);

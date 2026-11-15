@@ -1,6 +1,6 @@
 import type { ProjectDoc } from '@/lib/shared/types';
 import { errorResponse, notFound } from '@/lib/server/http';
-import { deleteProject, getProject, saveProject } from '@/lib/server/projects';
+import { deleteProject, getProject, renameProject, saveProject } from '@/lib/server/projects';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,6 +16,18 @@ export async function PUT(req: Request, ctx: Ctx) {
     if (doc.id !== id || !Array.isArray(doc.clips)) throw new Error('Proyecto no válido');
     const saved = await saveProject(doc);
     return Response.json({ updatedAt: saved.updatedAt });
+  } catch (err) {
+    return errorResponse(err, 400);
+  }
+}
+
+/** PATCH { name } — renames the project. */
+export async function PATCH(req: Request, ctx: Ctx) {
+  try {
+    const { name } = (await req.json()) as { name?: string };
+    if (typeof name !== 'string' || !name.trim()) throw new Error('Escribe un nombre');
+    const doc = await renameProject((await ctx.params).id, name.slice(0, 120));
+    return doc ? Response.json({ name: doc.name }) : notFound('Proyecto no encontrado');
   } catch (err) {
     return errorResponse(err, 400);
   }

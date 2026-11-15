@@ -268,6 +268,12 @@ async function startServer() {
   server.starting = true;
   // After a restart the system may need a moment to release the port.
   for (let i = 0; i < 20 && !(await portFree(server.port)); i++) await sleep(500);
+  // Start from a clean build cache: one left by older code can make the page reload over and over.
+  try {
+    fs.rmSync(path.join(root, '.next', 'dev'), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    // Still in use: the server will reuse it.
+  }
   server.starting = false;
   if (quitting) return;
   server.startedAt = Date.now();

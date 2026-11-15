@@ -21,6 +21,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(doc),
     }),
+  renameProject: (id: string, name: string) =>
+    request<{ name: string }>(`/api/projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }),
   deleteProject: (id: string) => request(`/api/projects/${id}`, { method: 'DELETE' }),
   media: (ids: string[]) =>
     ids.length ? request<{ media: MediaInfo[] }>(`/api/media?ids=${ids.join(',')}`).then((r) => r.media) : Promise.resolve([]),

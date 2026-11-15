@@ -8,14 +8,44 @@ import { create } from 'zustand';
 import { produce, type Draft } from 'immer';
 import type { Envelope, MediaInfo, ProjectDoc, ServerStatus, Word } from '@/lib/shared/types';
 
-export type Selection =
-  | { kind: 'words'; anchor: number; focus: number }
+/** One element of the timeline that can be selected. */
+export type SelRef =
   | { kind: 'segment'; clipId: string; rangeIndex: number }
   | { kind: 'broll'; id: string }
   | { kind: 'audio'; id: string }
   | { kind: 'text'; id: string }
-  | { kind: 'subtitle'; page: number }
+  | { kind: 'subtitle'; page: number };
+
+export type Selection =
+  | { kind: 'words'; anchor: number; focus: number }
+  | SelRef
+  /** Several elements at once (drag a box on the timeline, or Ctrl/Shift + click). */
+  | { kind: 'multi'; items: SelRef[] }
   | null;
+
+export const refKey = (r: SelRef) =>
+  r.kind === 'segment' ? `segment:${r.clipId}:${r.rangeIndex}` : r.kind === 'subtitle' ? `subtitle:${r.page}` : `${r.kind}:${r.id}`;
+
+/** The selected timeline elements, whether one or several. */
+export const selRefs = (sel: Selection): SelRef[] => (!sel || sel.kind === 'words' ? [] : sel.kind === 'multi' ? sel.items : [sel]);
+
+/** Selection for a list of elements: none, a single one or several. */
+export function selectionOf(refs: SelRef[]): Selection {
+  const seen = new Set<string>();
+  const items = refs.filter((r) => !seen.has(refKey(r)) && seen.add(refKey(r)));
+  return items.length === 0 ? null : items.length === 1 ? items[0] : { kind: 'multi', items };
+}
+
+/** Adds the element to the selection, or removes it when it was already there. */
+export function toggleRef(sel: Selection, ref: SelRef): Selection {
+  const refs = selRefs(sel);
+  const key = refKey(ref);
+  return selectionOf(refs.some((r) => refKey(r) === key) ? refs.filter((r) => refKey(r) !== key) : [...refs, ref]);
+}
+
+/** Tabs of the right panel (properties) and of the left one (tools). */
+export type InspectorTab = 'video' | 'audio' | 'subtitles' | 'animation';
+export type ToolsTab = 'media' | 'audio' | 'text' | 'transcript';
 
 export interface Upload {
   id: string;
@@ -52,6 +82,8 @@ interface EditorState {
   setupOpen: boolean;
   /** Preview videos with the chosen voice/music mix, per media id. */
   mixUrls: Record<string, string>;
+  inspectorTab: InspectorTab;
+  toolsTab: ToolsTab;
 
   load(doc: ProjectDoc): void;
   /** Applies a pure update to the document as one undo step. */
@@ -90,6 +122,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   status: null,
   setupOpen: false,
   mixUrls: {},
+  inspectorTab: 'subtitles',
+  toolsTab: 'media',
 
   load: (doc) => set({ doc, past: [], future: [], lastCommit: null, selection: null, saveState: 'saved' }),
 

@@ -12,12 +12,13 @@ import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTi
 import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimItemAt, trimRange, wordRunRanges } from '@/lib/shared/edit';
 import { computeFillerCuts, computeRetakeCuts, computeSilenceCuts } from '@/lib/shared/cleanup';
 import { alignScript } from '@/lib/shared/script';
+import { splitTextBlocks } from '@/lib/shared/text';
 import { buildSrt, buildVtt, captionPages, transcriptText } from '@/lib/shared/text-export';
 import { api, uploadFile } from './api';
 import { currentDerived } from './derived';
 import { formatSeconds, formatTime } from './format';
 import { player, usePlayback } from './player';
-import { useEditor, type Selection } from './store';
+import { selRefs, selectionOf, useEditor, type SelRef, type Selection } from './store';
 
 const newId = () => nanoid(10);
 const ed = () => useEditor.getState();
@@ -185,9 +186,40 @@ const replaceAt = <T>(list: T[], index: number, items: T[]) => [...list.slice(0,
 export type ItemKind = 'broll' | 'audio' | 'text';
 type AnyItem = BrollItem | AudioItem | TextItem;
 const LIST = { broll: 'broll', audio: 'audio', text: 'texts' } as const;
+const ITEM_KINDS: ItemKind[] = ['text', 'broll', 'audio'];
 const itemsOf = (doc: ProjectDoc, kind: ItemKind) => doc[LIST[kind]] as AnyItem[];
-const isItemSelection = (sel: Selection): sel is { kind: ItemKind; id: string } =>
-  !!sel && (sel.kind === 'broll' || sel.kind === 'audio' || sel.kind === 'text');
+type ItemRef = { kind: ItemKind; id: string };
+const isItemRef = (r: SelRef): r is ItemRef => r.kind === 'broll' || r.kind === 'audio' || r.kind === 'text';
+const isItemSelection = (sel: Selection): sel is ItemRef => !!sel && sel.kind !== 'words' && sel.kind !== 'multi' && isItemRef(sel);
+
+/** The free items (texts, overlays, audio) among some selected elements. */
+export function pickItems(doc: ProjectDoc, refs: SelRef[]): { kind: ItemKind; item: AnyItem }[] {
+  const out: { kind: ItemKind; item: AnyItem }[] = [];
+  for (const r of refs) {
+    const item = isItemRef(r) ? itemsOf(doc, r.kind).find((x) => x.id === r.id) : undefined;
+    if (item && isItemRef(r)) out.push({ kind: r.kind, item });
+  }
+  return out;
+}
+
+const hasSegment = (refs: SelRef[], seg: { clipId: string; rangeIndex: number }) =>
+  refs.some((r) => r.kind === 'segment' && r.clipId === seg.clipId && r.rangeIndex === seg.rangeIndex);
+
+/** Everything on the timeline (Ctrl + A). */
+export function selectAll() {
+  const doc = ed().doc;
+  if (!doc) return;
+  const { segs, pages } = currentDerived();
+  ed().setSelection(
+    selectionOf([
+      ...doc.texts.map((x): SelRef => ({ kind: 'text', id: x.id })),
+      ...(doc.subtitles.enabled ? pages.map((p): SelRef => ({ kind: 'subtitle', page: p.index })) : []),
+      ...doc.broll.map((x): SelRef => ({ kind: 'broll', id: x.id })),
+      ...segs.map((x): SelRef => ({ kind: 'segment', clipId: x.clipId, rangeIndex: x.rangeIndex })),
+      ...doc.audio.map((x): SelRef => ({ kind: 'audio', id: x.id })),
+    ]),
+  );
+}
 
 function replaceItem(kind: ItemKind, id: string, items: AnyItem[]) {
   ed().commitDoc((d) => {
@@ -203,6 +235,7 @@ export function splitAtPlayhead() {
   if (!doc) return;
   const t = usePlayback.getState().time;
   const sel = s.selection;
+  if (sel?.kind === 'multi') return splitSelected(sel.items, t);
   if (isItemSelection(sel)) {
     const item = itemsOf(doc, sel.kind).find((x) => x.id === sel.id);
     const parts = item ? splitItem(item, t, newId) : null;
@@ -227,6 +260,68 @@ export function splitAtPlayhead() {
   s.commitDoc((d) => ({ ...d, clips: replaceAt(d.clips, loc.seg.clipIndex, parts) }));
 }
 
+/** Splits at the playhead every selected element that it crosses, as one undo step. */
+function splitSelected(refs: SelRef[], t: number) {
+  const s = ed();
+  const loc = timelineToSource(currentDerived().segs, t);
+  let done = 0;
+  s.commitDoc((d) => {
+    let next = d;
+    for (const kind of ITEM_KINDS) {
+      const ids = new Set(refs.filter((r) => r.kind === kind).map((r) => (r as ItemRef).id));
+      if (!ids.size) continue;
+      const list = itemsOf(next, kind).flatMap((item) => {
+        const parts = ids.has(item.id) ? splitItem(item, t, newId) : null;
+        if (parts) done++;
+        return parts ?? [item];
+      });
+      next = { ...next, [LIST[kind]]: list };
+    }
+    if (loc && hasSegment(refs, loc.seg)) {
+      const parts = splitClip(next.clips[loc.seg.clipIndex], quantize(loc.src), newId);
+      if (parts) {
+        done++;
+        next = { ...next, clips: replaceAt(next.clips, loc.seg.clipIndex, parts) };
+      }
+    }
+    return done ? next : d;
+  });
+  if (!done) return s.toast('Coloca el cursor sobre alguno de los elementos seleccionados para dividirlo');
+  s.setSelection(selectionOf(refs.filter(isItemRef)));
+}
+
+/** "Delete left / right" on every selected element that the playhead crosses, as one undo step. */
+function trimSelected(refs: SelRef[], t: number, side: 'left' | 'right') {
+  const s = ed();
+  const key = `trim:${Date.now()}`;
+  const loc = timelineToSource(currentDerived().segs, t);
+  let done = 0;
+  s.commitDoc((d) => {
+    let next = d;
+    for (const kind of ITEM_KINDS) {
+      const ids = new Set(refs.filter((r) => r.kind === kind).map((r) => (r as ItemRef).id));
+      if (!ids.size) continue;
+      const list = itemsOf(next, kind).map((item) => {
+        const trimmed = ids.has(item.id) ? trimItemAt(item, t, side) : null;
+        if (trimmed) done++;
+        return trimmed ?? item;
+      });
+      next = { ...next, [LIST[kind]]: list };
+    }
+    return done ? next : d;
+  }, key);
+  if (loc && hasSegment(refs, loc.seg)) {
+    const { seg, src } = loc;
+    const room = side === 'left' ? src - seg.srcStart : seg.srcEnd - src;
+    if (room >= FRAME) {
+      done++;
+      trimSegment(seg.clipId, seg.rangeIndex, side === 'left' ? 'start' : 'end', src, key);
+      if (side === 'left') player.seek(seg.tlStart);
+    }
+  }
+  if (!done) s.toast('Coloca el cursor sobre alguno de los elementos seleccionados');
+}
+
 /**
  * "Delete left / right" as in CapCut: removes what is before or after the
  * playhead in the selected element, or in the main clip under the playhead.
@@ -237,6 +332,7 @@ export function trimAtPlayhead(side: 'left' | 'right') {
   if (!doc) return;
   const t = usePlayback.getState().time;
   const sel = s.selection;
+  if (sel?.kind === 'multi') return trimSelected(sel.items, t, side);
   if (isItemSelection(sel)) {
     const item = itemsOf(doc, sel.kind).find((x) => x.id === sel.id);
     const trimmed = item ? trimItemAt(item, t, side) : null;
@@ -262,6 +358,7 @@ export function deleteSelection() {
   const sel = s.selection;
   if (!sel || !s.doc) return;
   if (sel.kind === 'words') return cutSelectedWords();
+  if (sel.kind === 'multi') return deleteMany(sel.items);
   if (isItemSelection(sel)) {
     s.commitDoc((d) => ({ ...d, [LIST[sel.kind]]: itemsOf(d, sel.kind).filter((x) => x.id !== sel.id) }));
   } else if (sel.kind === 'segment') {
@@ -284,15 +381,49 @@ export function deleteSelection() {
   s.setSelection(null);
 }
 
+/** Deletes several elements of any kind as one undo step. */
+function deleteMany(refs: SelRef[]) {
+  const s = ed();
+  const key = `delete:${Date.now()}`;
+  // Subtitle blocks are numbered on the current timeline: read their words before anything changes.
+  const { pages } = currentDerived();
+  const subtitleWords = refs.flatMap((r) => (r.kind === 'subtitle' ? (pages[r.page]?.words.map((w) => w.key) ?? []) : []));
+  const ranges = new Map<string, number[]>();
+  for (const r of refs) if (r.kind === 'segment') ranges.set(r.clipId, [...(ranges.get(r.clipId) ?? []), r.rangeIndex]);
+  s.commitDoc((d) => {
+    let next = d;
+    for (const kind of ITEM_KINDS) {
+      const ids = new Set(refs.filter((r) => r.kind === kind).map((r) => (r as ItemRef).id));
+      if (ids.size) next = { ...next, [LIST[kind]]: itemsOf(next, kind).filter((x) => !ids.has(x.id)) };
+    }
+    if (ranges.size) {
+      next = {
+        ...next,
+        clips: next.clips.map((c) => {
+          const kept = keptRanges(c);
+          const cut = (ranges.get(c.id) ?? []).map((i) => kept[i]).filter(Boolean);
+          return cut.length ? addCuts(c, cut, 'manual') : c;
+        }),
+      };
+    }
+    return next;
+  }, key);
+  patchWords(subtitleWords, (prev) => ({ ...prev, hidden: true }), key);
+  s.setSelection(null);
+}
+
 /** Longest a clip can be extended: its file length, or an hour for photos. */
 const sourceLength = (m: MediaInfo | undefined, fallback: number) => (m?.kind === 'image' ? 3600 : (m?.duration ?? fallback));
 
-export function trimSegment(clipId: string, rangeIndex: number, edge: 'start' | 'end', src: number) {
+export function trimSegment(clipId: string, rangeIndex: number, edge: 'start' | 'end', src: number, coalesceKey?: string) {
   const s = ed();
-  s.commitDoc((d) => ({
-    ...d,
-    clips: d.clips.map((c) => (c.id === clipId ? trimRange(c, rangeIndex, edge, quantize(src), sourceLength(s.media[c.mediaId], c.end)) : c)),
-  }));
+  s.commitDoc(
+    (d) => ({
+      ...d,
+      clips: d.clips.map((c) => (c.id === clipId ? trimRange(c, rangeIndex, edge, quantize(src), sourceLength(s.media[c.mediaId], c.end)) : c)),
+    }),
+    coalesceKey,
+  );
 }
 
 export function moveSegment(clipId: string, rangeIndex: number, dropTime: number) {
@@ -300,11 +431,58 @@ export function moveSegment(clipId: string, rangeIndex: number, dropTime: number
   ed().setSelection(null);
 }
 
-export function updateItem(kind: ItemKind, id: string, patch: Partial<BrollItem & AudioItem & TextItem>, coalesceKey?: string) {
+export type ItemPatch = Partial<BrollItem & AudioItem & TextItem>;
+
+export function updateItem(kind: ItemKind, id: string, patch: ItemPatch, coalesceKey?: string) {
+  updateItems([{ kind, id, patch }], coalesceKey);
+}
+
+/** Changes several items in one undo step. */
+export function updateItems(changes: { kind: ItemKind; id: string; patch: ItemPatch }[], coalesceKey?: string) {
+  if (!changes.length) return;
   ed().commit((d) => {
-    const item = itemsOf(d as ProjectDoc, kind).find((x) => x.id === id);
-    if (item) Object.assign(item, patch);
+    for (const c of changes) {
+      const item = itemsOf(d as ProjectDoc, c.kind).find((x) => x.id === c.id);
+      if (item) Object.assign(item, c.patch);
+    }
   }, coalesceKey);
+}
+
+/** Moves the selected texts, overlays and audio together along the timeline. */
+export function moveItems(refs: SelRef[], dt: number) {
+  const doc = ed().doc;
+  const items = doc ? pickItems(doc, refs) : [];
+  if (!items.length || !dt) return;
+  const shift = Math.max(dt, -Math.min(...items.map((x) => x.item.start)));
+  updateItems(items.map(({ kind, item }) => ({ kind, id: item.id, patch: { start: item.start + shift } })));
+}
+
+/**
+ * Gives the same duration to every selected item. Items that were one right
+ * after another on a track stay that way, so a row of text blocks does not
+ * end up with gaps or overlaps.
+ */
+export function setItemsDuration(refs: SelRef[], duration: number, coalesceKey?: string) {
+  const s = ed();
+  if (!s.doc) return;
+  const picked = pickItems(s.doc, refs);
+  const changes: { kind: ItemKind; id: string; patch: ItemPatch }[] = [];
+  for (const kind of ITEM_KINDS) {
+    const items = picked.filter((x) => x.kind === kind).map((x) => x.item);
+    items.sort((a, b) => a.start - b.start);
+    let oldEnd = -Infinity;
+    let newEnd = 0;
+    for (const item of items) {
+      const m = 'mediaId' in item ? s.media[item.mediaId] : undefined;
+      const room = m && m.kind !== 'image' && 'srcIn' in item ? Math.max(0.1, m.duration - item.srcIn) : Infinity;
+      const start = Math.abs(item.start - oldEnd) < 0.05 ? newEnd : item.start;
+      const length = Math.max(0.1, Math.min(duration, room));
+      changes.push({ kind, id: item.id, patch: { start, duration: length } });
+      oldEnd = item.start + item.duration;
+      newEnd = start + length;
+    }
+  }
+  updateItems(changes, coalesceKey);
 }
 
 const withMedia = (doc: ProjectDoc, id: string): string[] => (doc.media.includes(id) ? doc.media : [...doc.media, id]);
@@ -420,18 +598,13 @@ export function stepFrames(frames: number) {
 /** Reading time for a text block: about 0.45 s per word. */
 export const textDuration = (text: string) => Math.max(1.2, Math.min(8, text.trim().split(/\s+/).filter(Boolean).length * 0.45 + 0.6));
 
-const textBlocks = (raw: string) =>
-  raw
-    .split('/')
-    .map((b) => b.trim())
-    .filter(Boolean);
-
 /**
  * Adds typed or dictated text at the playhead. Slashes separate blocks:
  * "el lobo / enfurecido / está en el bosque" becomes three texts in a row.
+ * With `wordsPerBlock` the text is also cut every so many words.
  */
-export function addTextBlocks(raw: string, style: Partial<TextItem> = {}) {
-  const blocks = textBlocks(raw);
+export function addTextBlocks(raw: string, style: Partial<TextItem> = {}, wordsPerBlock = 0) {
+  const blocks = splitTextBlocks(raw, wordsPerBlock);
   if (!blocks.length) return ed().toast('Escribe o dicta un texto primero');
   let t = usePlayback.getState().time;
   const items = blocks.map((text): TextItem => {
@@ -440,15 +613,16 @@ export function addTextBlocks(raw: string, style: Partial<TextItem> = {}) {
     return item;
   });
   ed().commitDoc((d) => ({ ...d, texts: [...d.texts, ...items] }));
-  ed().setSelection({ kind: 'text', id: items[0].id });
-  if (items.length > 1) ed().toast(`${items.length} bloques de texto añadidos`, 'success');
+  // All the new blocks stay selected, so their look can be changed at once.
+  ed().setSelection(selectionOf(items.map((x): SelRef => ({ kind: 'text', id: x.id }))));
+  if (items.length > 1) ed().toast(`${items.length} bloques de texto añadidos y seleccionados`, 'success');
 }
 
 /** Splits one text containing slashes into consecutive texts that share its time span. */
 export function splitTextBySlashes(id: string) {
   const item = ed().doc?.texts.find((x) => x.id === id);
   if (!item) return;
-  const blocks = textBlocks(item.text);
+  const blocks = splitTextBlocks(item.text);
   if (blocks.length < 2) return ed().toast('Escribe una barra / donde quieras cortar el texto');
   const chars = blocks.reduce((n, b) => n + b.length, 0);
   let t = item.start;

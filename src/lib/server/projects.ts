@@ -16,7 +16,14 @@ export async function listProjects(): Promise<ProjectSummary[]> {
     if (!f.endsWith('.json')) continue;
     try {
       const doc = JSON.parse(await readFile(path.join(dir(), f), 'utf8')) as ProjectDoc;
-      out.push({ id: doc.id, name: doc.name, createdAt: doc.createdAt, updatedAt: doc.updatedAt, clipCount: doc.clips?.length ?? 0 });
+      out.push({
+        id: doc.id,
+        name: doc.name,
+        createdAt: doc.createdAt,
+        updatedAt: doc.updatedAt,
+        clipCount: doc.clips?.length ?? 0,
+        thumbMediaId: doc.clips?.[0]?.mediaId ?? doc.broll?.[0]?.mediaId ?? null,
+      });
     } catch {
       // Ignore unreadable files.
     }
@@ -47,6 +54,15 @@ export async function saveProject(doc: ProjectDoc): Promise<ProjectDoc> {
   const saved = normalizeProjectDoc({ ...doc, updatedAt: new Date().toISOString() });
   await writeJsonAtomic(fileOf(doc.id), saved);
   return saved;
+}
+
+/** Changes only the name; the project keeps its place in the list (same update time). */
+export async function renameProject(id: string, name: string): Promise<ProjectDoc | null> {
+  const doc = await getProject(id);
+  if (!doc) return null;
+  const renamed = { ...doc, name: name.trim() || doc.name };
+  await writeJsonAtomic(fileOf(id), renamed);
+  return renamed;
 }
 
 export async function deleteProject(id: string) {

@@ -1,11 +1,10 @@
 'use client';
 import { useState } from 'react';
 import clsx from 'clsx';
-import { FileText } from 'lucide-react';
-import type { SubtitleAnimation, SubtitleStyle } from '@/lib/shared/types';
+import { FileText, Sparkles } from 'lucide-react';
+import type { SubtitleStyle } from '@/lib/shared/types';
 import { DEFAULT_SUBTITLE_STYLE } from '@/lib/shared/types';
 import { cssFamily, getFont } from '@/lib/shared/fonts';
-import { ANIMATIONS } from '@/lib/shared/subtitle-anim';
 import { useEditor } from '@/lib/client/store';
 import { downloadText } from '@/lib/client/actions';
 import { Button, ColorField, Row, Section, Segmented, SliderRow, Toggle } from '@/components/ui';
@@ -84,6 +83,21 @@ export function SubtitleStylePanel() {
       </Section>
 
       <div className={clsx(!style.enabled && 'pointer-events-none opacity-40')}>
+        <Section title="Separación">
+          <Row label="Palabras">
+            <Segmented
+              value={String(Math.min(style.wordsPerPage, 6))}
+              onChange={(v) => set('wordsPerPage', Number(v))}
+              options={['1', '2', '3', '4', '5', '6'].map((n) => ({ value: n, label: n }))}
+            />
+          </Row>
+          <p className="text-[11px] leading-relaxed text-faint">
+            Los subtítulos se crean solos a partir de la voz, {style.wordsPerPage === 1 ? 'palabra a palabra' : `cada ${style.wordsPerPage} palabras`}
+            . Una frase nueva o una pausa empiezan siempre un subtítulo nuevo.
+          </p>
+          <SliderRow label="Letras por línea" value={style.maxCharsPerLine} min={6} max={40} onChange={(v) => set('maxCharsPerLine', v)} />
+        </Section>
+
         <Section title="Estilos">
           <div className="grid grid-cols-3 gap-1.5">
             {PRESETS.map((p) => {
@@ -151,23 +165,6 @@ export function SubtitleStylePanel() {
           )}
         </Section>
 
-        <Section title="Animación">
-          <Row label="Entrada">
-            <select
-              value={style.animationIn}
-              onChange={(e) => set('animationIn', e.target.value as SubtitleAnimation)}
-              className="h-7 min-w-0 flex-1 rounded bg-panel-3 px-2 text-xs text-fg outline-none"
-            >
-              {ANIMATIONS.map((a) => (
-                <option key={a.value} value={a.value}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
-          </Row>
-          <Toggle label="Desvanecer al salir" checked={style.animationOut === 'fade'} onChange={(v) => set('animationOut', v ? 'fade' : 'none')} />
-        </Section>
-
         <Section title="Posición">
           <Segmented
             value={style.positionY <= 30 ? 'top' : style.positionY >= 62 ? 'bottom' : 'middle'}
@@ -185,9 +182,10 @@ export function SubtitleStylePanel() {
           <SliderRow label="Vertical" value={style.positionY} min={0} max={100} unit="%" onChange={(v) => set('positionY', v)} />
         </Section>
 
-        <Section title="Bloques">
-          <SliderRow label="Palabras" value={style.wordsPerPage} min={1} max={8} onChange={(v) => set('wordsPerPage', v)} />
-          <SliderRow label="Letras por línea" value={style.maxCharsPerLine} min={6} max={40} onChange={(v) => set('maxCharsPerLine', v)} />
+        <Section title="Animación">
+          <Button size="sm" className="self-start" onClick={() => useEditor.getState().set({ inspectorTab: 'animation' })}>
+            <Sparkles size={12} /> Elegir animación
+          </Button>
         </Section>
       </div>
     </div>

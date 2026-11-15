@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Loader2, Mic, Plus, Square } from 'lucide-react';
 import type { TextItem } from '@/lib/shared/types';
 import { useEditor } from '@/lib/client/store';
+import { splitTextBlocks } from '@/lib/shared/text';
 import { useRecorder } from '@/lib/client/recorder';
 import { addTextBlocks, dictate } from '@/lib/client/actions';
 import { formatTime } from '@/lib/client/format';
@@ -30,11 +31,10 @@ export function TextTab() {
   const [text, setText] = useState('');
   const [shape, setShape] = useState<TextShape>('none');
   const [busy, setBusy] = useState(false);
+  /** 0 = only at the slashes; otherwise also every so many words. */
+  const [perBlock, setPerBlock] = useState(0);
   const recorder = useRecorder();
-  const blocks = text
-    .split('/')
-    .map((b) => b.trim())
-    .filter(Boolean);
+  const blocks = splitTextBlocks(text, perBlock);
 
   const toggleDictation = async () => {
     const s = useEditor.getState();
@@ -52,7 +52,7 @@ export function TextTab() {
   };
 
   const add = () => {
-    addTextBlocks(text, SHAPES[shape]);
+    addTextBlocks(text, SHAPES[shape], perBlock);
     setText('');
   };
 
@@ -86,6 +86,19 @@ export function TextTab() {
         </Button>
       </div>
       <div>
+        <p className="mb-1.5 text-xs font-medium text-muted">Separar en bloques</p>
+        <Segmented
+          value={String(perBlock)}
+          onChange={(v) => setPerBlock(Number(v))}
+          options={[
+            { value: '0', label: 'Con barras /' },
+            { value: '1', label: '1 palabra' },
+            { value: '2', label: '2 palabras' },
+            { value: '3', label: '3 palabras' },
+          ]}
+        />
+      </div>
+      <div>
         <p className="mb-1.5 text-xs font-medium text-muted">Forma</p>
         <Segmented value={shape} onChange={setShape} options={SHAPE_OPTIONS} />
       </div>
@@ -93,8 +106,9 @@ export function TextTab() {
         <p className="mb-1 font-semibold text-fg">Separa bloques con una barra /</p>
         <p>
           <span className="text-accent">el lobo / enfurecido / está en el bosque</span> crea tres textos seguidos que puedes mover, alargar y editar
-          por separado.
+          por separado. O elige arriba que se separe solo cada 1, 2 o 3 palabras.
         </p>
+        <p className="mt-1.5">Los bloques nuevos quedan todos seleccionados, para cambiarles la fuente, el color o el tamaño de una vez.</p>
         <p className="mt-1.5">
           El texto se añade donde está el cursor. Después arrástralo en el vídeo, cámbiale el tamaño con las esquinas o gíralo.
         </p>

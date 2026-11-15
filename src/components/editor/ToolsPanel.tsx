@@ -241,7 +241,7 @@ export function AudioControls({ media }: { media: MediaInfo }) {
   const voice = mix?.voice ?? 1;
   const music = mix?.music ?? 1;
   const preset = !mix ? 'original' : voice > 0 && music === 0 ? 'voice' : voice === 0 && music > 0 ? 'music' : 'custom';
-  const preparing = !!mix && !mixUrl?.endsWith(`v=${voice}&m=${music}`);
+  const preparing = !!mix && !mixUrl;
   return (
     <div className="flex flex-col gap-1.5">
       <Segmented
@@ -277,7 +277,7 @@ export function AudioControls({ media }: { media: MediaInfo }) {
       />
       {preparing && (
         <span className="flex items-center gap-1 text-[11px] text-faint">
-          <Loader2 size={11} className="animate-spin" /> Preparando la mezcla para la vista previa…
+          <Loader2 size={11} className="animate-spin" /> Preparando el sonido de la vista previa (solo la primera vez)…
         </span>
       )}
     </div>

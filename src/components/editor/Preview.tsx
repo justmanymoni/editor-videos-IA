@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Loader2, Pause, Play, SkipBack, SkipForward, Upload } from 'lucide-react';
-import type { MediaInfo } from '@/lib/shared/types';
+import type { AudioMix, MediaInfo } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { overlayRect } from '@/lib/shared/text-curve';
 import { mediaUrl } from '@/lib/client/api';
@@ -69,6 +69,13 @@ export function Preview() {
   useEffect(() => {
     player.setTimeline(segs, doc.broll, doc.audio, doc.settings.mainVolume);
   }, [segs, doc.broll, doc.audio, doc.settings.mainVolume]);
+
+  // Clips that play their stems preview (voice and music on separate channels), with the level chosen for each.
+  useEffect(() => {
+    const stems: Record<string, AudioMix> = {};
+    for (const [id, mix] of Object.entries(doc.audioMix)) if (mixUrls[id]) stems[id] = mix;
+    player.setStems(stems);
+  }, [doc.audioMix, mixUrls]);
 
   useEffect(() => {
     player.setBlurCanvas(canvasRef.current, blur);

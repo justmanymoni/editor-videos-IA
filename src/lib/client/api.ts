@@ -45,7 +45,8 @@ export const api = {
   job: (id: string) => request<{ job: JobInfo }>(`/api/jobs/${id}`).then((r) => r.job),
   cancelJob: (id: string) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
   separate: (id: string) => request<{ media: MediaInfo }>(`/api/media/${id}/separate`, jsonBody({})).then((r) => r.media),
-  mix: (id: string, voice: number, music: number) => request<{ url?: string; jobId?: string }>(`/api/media/${id}/mix`, jsonBody({ voice, music })),
+  /** Preview of a separated clip with the voice and the music on separate channels. */
+  stemsPreview: (id: string) => request<{ url?: string; jobId?: string }>(`/api/media/${id}/mix`, jsonBody({})),
   dictate: async (audio: Blob, lang: string) => (await request<{ text: string }>(`/api/dictate?lang=${lang}`, { method: 'POST', body: audio })).text,
   record: async (audio: Blob) => (await request<{ media: MediaInfo }>('/api/resources/record', { method: 'POST', body: audio })).media,
   installWhisper: (model: string) => request<{ job: JobInfo }>('/api/whisper/setup', jsonBody({ model })).then((r) => r.job),

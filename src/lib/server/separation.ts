@@ -103,33 +103,34 @@ export async function enqueueSeparation(id: string) {
 
 export const hasStems = (id: string) => existsSync(mediaPaths(id).voice) && existsSync(mediaPaths(id).music);
 
-/** Video of the clip with the chosen voice/music mix, for the preview player. */
-export async function mixPreview(id: string, voice: number, music: number): Promise<{ file: string } | { jobId: string }> {
+/**
+ * Preview video of a separated clip: the same picture with the voice on the
+ * left audio channel and the music on the right one. The player sets the
+ * level of each channel itself, so moving the voice / music sliders is heard
+ * at once and nothing has to be rendered again. Made once per clip.
+ */
+export async function stemsPreview(id: string): Promise<{ file: string } | { jobId: string }> {
   const paths = mediaPaths(id);
-  const file = paths.mix(voice, music);
+  const file = paths.stems;
   if (existsSync(file)) return { file };
-  const active = jobs.active('mix', `${id}:${path.basename(file)}`);
+  const active = jobs.active('mix', id);
   if (active) return { jobId: active.id };
   const rec = await getMedia(id);
   if (!rec || !hasStems(id)) throw new Error('Primero separa la voz y la música de este clip');
-  const job = jobs.enqueue('mix', `${id}:${path.basename(file)}`, async (ctx) => {
+  const job = jobs.enqueue('mix', id, async (ctx) => {
     const video = rec.hasProxy && existsSync(paths.proxy) ? paths.proxy : rec.sourcePath;
     const part = `${file}.part.mp4`;
+    // Each stem as mono, joined as left / right. Joint stereo is off so one channel does not leak into the other.
     // prettier-ignore
     await ffmpeg([
       '-y', '-loglevel', 'error', '-i', video, '-i', paths.voice, '-i', paths.music,
-      '-filter_complex', `[1:a]volume=${voice}[v];[2:a]volume=${music}[m];[v][m]amix=inputs=2:normalize=0:duration=first[a]`,
-      '-map', '0:v:0', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', part,
+      '-filter_complex', '[1:a]aformat=channel_layouts=mono[v];[2:a]aformat=channel_layouts=mono[m];[v][m]join=inputs=2:channel_layout=stereo[a]',
+      '-map', '0:v:0', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-aac_ms', '0', '-aac_is', '0', '-movflags', '+faststart', part,
     ], { signal: ctx.signal });
     await rename(part, file);
-    // Keep only the three most recent mixes of this clip.
+    // Previews made by older versions (one file per mix) are no longer used.
     const dir = path.dirname(file);
-    const mixes = (await readdir(dir)).filter((f) => /^mix-v\d+-m\d+\.mp4$/.test(f));
-    if (mixes.length > 3) {
-      const withTime = await Promise.all(mixes.map(async (f) => ({ f, t: (await stat(path.join(dir, f))).mtimeMs })));
-      withTime.sort((a, b) => b.t - a.t);
-      for (const { f } of withTime.slice(3)) await rm(path.join(dir, f), { force: true });
-    }
+    for (const f of await readdir(dir)) if (/^mix-v\d+-m\d+\.mp4$/.test(f)) await rm(path.join(dir, f), { force: true });
     return { file };
   });
   return { jobId: job.id };

@@ -150,55 +150,48 @@ export function useAutoSilence() {
 }
 
 /**
- * Keeps a preview video for every clip whose voice/music mix was changed, so
- * the player sounds exactly like the export (rendered on the server).
+ * Gets the "stems" preview of every separated clip of the project: a video
+ * with the voice on one audio channel and the music on the other. The player
+ * mixes the two itself, so the voice / music sliders are heard at once. The
+ * preview is asked for as soon as a clip is separated, before any slider is
+ * touched.
  */
 export function useMixPreviews() {
   useEffect(() => {
-    const requested = new Map<string, string>();
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    const requested = new Set<string>();
+    let alive = true;
 
-    const sync = async () => {
+    const fetchPreview = async (id: string) => {
+      try {
+        let res = await api.stemsPreview(id);
+        while (alive && res.jobId) {
+          await new Promise((r) => setTimeout(r, 500));
+          const job = await api.job(res.jobId);
+          if (job.status === 'error' || job.status === 'cancelled') throw new Error(job.error ?? 'No se pudo preparar el sonido de la vista previa');
+          if (job.status === 'done') res = await api.stemsPreview(id);
+        }
+        if (alive && res.url) useEditor.getState().set({ mixUrls: { ...useEditor.getState().mixUrls, [id]: res.url } });
+      } catch (e) {
+        requested.delete(id); // try again on the next change
+        if (alive) useEditor.getState().toast(e instanceof Error ? e.message : String(e), 'error');
+      }
+    };
+
+    const sync = () => {
       const s = useEditor.getState();
-      const mixes = s.doc?.audioMix ?? {};
-      for (const id of Object.keys(s.mixUrls)) {
-        if (!mixes[id]) {
-          const { [id]: _gone, ...rest } = useEditor.getState().mixUrls;
-          useEditor.getState().set({ mixUrls: rest });
-          requested.delete(id);
-        }
-      }
-      for (const [id, mix] of Object.entries(mixes)) {
-        if (s.media[id]?.separation?.status !== 'done') continue;
-        const key = `${mix.voice}:${mix.music}`;
-        if (requested.get(id) === key) continue;
-        requested.set(id, key);
-        try {
-          let res = await api.mix(id, mix.voice, mix.music);
-          while (res.jobId) {
-            await new Promise((r) => setTimeout(r, 700));
-            const job = await api.job(res.jobId);
-            if (job.status === 'error') throw new Error(job.error ?? 'Error al preparar la mezcla');
-            if (job.status === 'done') res = await api.mix(id, mix.voice, mix.music);
-          }
-          if (res.url && requested.get(id) === key) useEditor.getState().set({ mixUrls: { ...useEditor.getState().mixUrls, [id]: res.url } });
-        } catch (e) {
-          requested.delete(id);
-          useEditor.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-        }
+      for (const id of s.doc?.media ?? []) {
+        if (s.media[id]?.separation?.status !== 'done' || requested.has(id)) continue;
+        requested.add(id);
+        void fetchPreview(id);
       }
     };
-    const schedule = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void sync(), 400);
-    };
-    schedule();
+    sync();
     const unsub = useEditor.subscribe((s, prev) => {
-      if (s.doc?.audioMix !== prev.doc?.audioMix || s.media !== prev.media) schedule();
+      if (s.media !== prev.media || s.doc?.media !== prev.doc?.media) sync();
     });
     return () => {
+      alive = false;
       unsub();
-      if (timer) clearTimeout(timer);
     };
   }, []);
 }
@@ -242,7 +235,14 @@ export function useAutosave() {
   return save;
 }
 
-const isTyping = (el: EventTarget | null) => el instanceof HTMLElement && el.closest('input, textarea, select, [contenteditable="true"]') !== null;
+/** Controls that take keystrokes as text. Sliders, checkboxes and colour pickers do not: shortcuts keep working after using them. */
+const NOT_TEXT = new Set(['range', 'checkbox', 'radio', 'color', 'button', 'submit', 'file']);
+function isTyping(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  const field = el.closest('input, textarea, select, [contenteditable="true"]');
+  if (!field) return false;
+  return !(field instanceof HTMLInputElement && NOT_TEXT.has(field.type));
+}
 
 /**
  * Space = play/pause, S = split, Supr/Backspace = delete selection,
@@ -252,6 +252,8 @@ export function useShortcuts(saveNow: () => void, openHelp: () => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.defaultPrevented) return;
+      // A slider that has the keyboard focus uses the arrow keys itself.
+      if (e.target instanceof HTMLInputElement && e.target.type === 'range' && e.key.startsWith('Arrow')) return;
       const s = useEditor.getState();
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();

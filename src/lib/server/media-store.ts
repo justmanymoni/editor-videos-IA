@@ -36,7 +36,8 @@ export function mediaPaths(id: string) {
     voice: path.join(dir, 'voice.flac'),
     music: path.join(dir, 'music.flac'),
     voiceEnvelope: path.join(dir, 'envelope-voice.bin'),
-    mix: (voice: number, music: number) => path.join(dir, `mix-v${Math.round(voice * 100)}-m${Math.round(music * 100)}.mp4`),
+    /** Preview with the voice on the left channel and the music on the right one. */
+    stems: path.join(dir, 'stems-preview.mp4'),
   };
 }
 

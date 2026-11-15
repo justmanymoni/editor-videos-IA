@@ -67,8 +67,8 @@ En la pantalla de inicio pulsa **Instalar** en la tarjeta «Transcripción local
 
 Al abrir la app con `Verticut.bat` (o `./verticut.sh`, o `npm run app`) no hay que volver a escribir `git pull` ni `npm install`:
 
-- Al arrancar y **cada minuto** comprueba si hay cambios nuevos en GitHub y los descarga.
-- Los cambios de la interfaz aparecen en el navegador sin hacer nada. Si la actualización lo necesita, reinstala los componentes y reinicia la app sola (tarda unos segundos y la página se recarga).
+- Al arrancar y **cada 30 segundos** comprueba si hay cambios nuevos en GitHub y los descarga.
+- Los cambios de la interfaz aparecen en el navegador sin hacer nada. Si la actualización lo necesita, reinstala los componentes y reinicia la app sola: tarda unos segundos y la página abierta se recarga por sí misma con la versión nueva.
 - **Nunca actualiza a mitad de una exportación o una transcripción**: espera a que termine.
 - Tus proyectos, vídeos y modelos (`storage/`, `recursos/`) no se tocan.
 - Si has modificado a mano algún archivo del programa, no lo pisa: avisa en la ventana y sigue con tu versión. Para guardar tus cambios aparte (`git stash`) y actualizar: `Verticut.bat --descartar`.
@@ -81,7 +81,7 @@ En la pantalla de inicio, abajo, se ve la fecha de la versión instalada.
 | `--sin-navegador`            | No abre el navegador al arrancar                                   |
 | `--descartar`                | Guarda aparte tus cambios locales para poder actualizar            |
 | `PORT=3001`                  | Usa otro puerto (si el 3000 está ocupado elige el siguiente libre) |
-| `VERTICUT_UPDATE_SECONDS=60` | Cada cuántos segundos se comprueba (`0` lo desactiva)              |
+| `VERTICUT_UPDATE_SECONDS=30` | Cada cuántos segundos se comprueba (`0` lo desactiva)              |
 
 Si prefieres arrancarla a mano, sin actualizaciones: `npm install` y `npm run dev`.
 
@@ -276,6 +276,7 @@ scripts/start.mjs      Lanzador con actualización automática
 - **Textos manuales**: el navegador los dibuja en un lienzo (con su curva, giro y contorno) y esa misma imagen es la que se superpone en el MP4, así que salen idénticos.
 - **Animaciones**: la vista previa y el archivo ASS calculan cada animación de los subtítulos con las mismas fórmulas y duraciones. Las de los textos manuales se exportan como expresiones de FFmpeg (escala, posición y fundido de la imagen del texto) generadas a partir de esas mismas fórmulas; un test comprueba que coinciden fotograma a fotograma.
 - **Velocidad**: cada clip tiene su velocidad; el paso de tiempo del original al del montaje se hace en un único sitio (`timeline.ts`), así que subtítulos, transcripción y cortes la siguen. Al exportar, el vídeo se reajusta con `setpts` y el audio con `atempo` (que conserva el tono), forzando el mismo número exacto de fotogramas y muestras.
+- **Sonido de la vista previa**: los vídeos de la pista principal pasan por un pequeño mezclador (Web Audio), así que el volumen se oye en el acto. De cada clip con la voz separada se prepara una sola vista previa con la voz en el canal izquierdo y la música en el derecho; el reproductor ajusta el nivel de cada canal, por lo que mover los deslizadores de voz y música no obliga a generar nada.
 - **Silencios**: se combinan el análisis de volumen del audio (umbral adaptativo al ruido de fondo de cada clip) y los huecos entre palabras de la transcripción, dejando un pequeño margen junto a la voz (ajustable).
 
 ## Scripts
@@ -289,6 +290,25 @@ scripts/start.mjs      Lanzador con actualización automática
 | `npm run typecheck`           | Comprobación de tipos                                                                                     |
 | `npm run format`              | Formatea con Prettier                                                                                     |
 | `npm run check`               | Tipos + formato + tests                                                                                   |
+
+## Auditoría de la interfaz
+
+Dos guiones recorren la app como lo haría una persona y comprueban que cada control hace algo **al instante**, tanto en el proyecto como en la vista previa:
+
+- `scripts/audit/audit-ui.cjs`: pulsa los 225 controles (barra superior, reproductor, línea de tiempo, las pestañas de la izquierda y de la derecha, atajos de teclado, arrastres en el vídeo) y mide lo que tarda cada uno en notarse.
+- `scripts/audit/audit-sound.cjs`: mueve el volumen, la voz y la música y mide el sonido que sale realmente del reproductor.
+
+Necesitan [Playwright](https://playwright.dev) y la app en marcha con un proyecto que tenga un vídeo transcrito, una foto y una superposición:
+
+```bash
+node scripts/audit/audit-ui.cjs
+```
+
+```bash
+node scripts/audit/audit-sound.cjs
+```
+
+El proyecto se deja como estaba al terminar.
 
 ## Variables de entorno
 

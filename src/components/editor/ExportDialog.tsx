@@ -62,8 +62,12 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
     }
   };
 
-  const cancel = async () => {
-    if (job) await api.cancelJob(job.id).catch(() => undefined);
+  const cancel = () => {
+    if (!job) return;
+    // The dialog goes back at once; the server stops FFmpeg in the background.
+    if (poll.current) clearInterval(poll.current);
+    void api.cancelJob(job.id).catch(() => undefined);
+    setJob({ ...job, status: 'cancelled' });
   };
 
   const result = job?.status === 'done' ? (job.result as { url: string; name: string; size: number } | null) : null;

@@ -124,6 +124,8 @@ export function Slider({
       max={max}
       step={step}
       onChange={(e) => onChange(Number(e.target.value))}
+      // After dragging with the mouse the keyboard goes back to the editor (space plays, arrows step frames).
+      onPointerUp={(e) => e.currentTarget.blur()}
     />
   );
 }

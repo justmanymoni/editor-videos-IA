@@ -8,7 +8,7 @@
  * follow the timeline clock.
  */
 import { create } from 'zustand';
-import type { AudioItem, BrollItem } from '@/lib/shared/types';
+import type { AudioItem, AudioMix, BrollItem } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
 import { sequenceDuration, timelineToSource, type Segment } from '@/lib/shared/timeline';
 
@@ -22,6 +22,20 @@ const END_EPS = 0.012;
 type Deck = HTMLVideoElement | HTMLImageElement;
 const isVideo = (el: Deck | undefined): el is HTMLVideoElement => el instanceof HTMLVideoElement;
 
+/**
+ * Sound of one main deck, routed through Web Audio so that volume changes are
+ * heard at once. `plain` carries the clip's normal sound. When the deck plays
+ * the "stems" preview of a clip (voice on the left channel, music on the
+ * right), `voice` and `music` carry each one at its own level instead.
+ */
+interface DeckAudio {
+  plain: GainNode;
+  voice: GainNode;
+  music: GainNode;
+  /** Levels last asked for (the nodes glide to them in a few milliseconds). */
+  target: { plain: number; voice: number; music: number };
+}
+
 class PlayerEngine {
   private segs: Segment[] = [];
   private duration = 0;
@@ -33,6 +47,11 @@ class PlayerEngine {
   private broll: BrollItem[] = [];
   private music: AudioItem[] = [];
   private mainVolume = 1;
+  private sound: { ctx: AudioContext; master: GainNode; analyser: AnalyserNode } | null = null;
+  private soundFailed = false;
+  private routes = new WeakMap<HTMLVideoElement, DeckAudio>();
+  /** Voice and music levels of the clips whose decks are playing their stems preview, by media id. */
+  private stems: Record<string, AudioMix> = {};
   private cur = -1;
   private raf = 0;
   private playing = false;
@@ -55,6 +74,8 @@ class PlayerEngine {
         el.addEventListener('seeked', this.onSeeked);
         el.addEventListener('loadeddata', this.onSeeked);
         el.addEventListener('loadedmetadata', this.onReloaded);
+        this.route(el);
+        this.applyVolumes();
       } else el.addEventListener('load', this.onSeeked);
       // A deck that appears late (new clip) may be the one we should show.
       if (this.cur >= 0 && this.deckFor(this.cur) === el) queueMicrotask(() => this.seek(usePlayback.getState().time));
@@ -71,6 +92,100 @@ class PlayerEngine {
     else this.audios.delete(id);
   }
 
+  private ensureSound() {
+    if (this.sound || this.soundFailed || typeof window === 'undefined') return this.sound;
+    try {
+      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) throw new Error('Web Audio no disponible');
+      const ctx = new Ctx();
+      const master = ctx.createGain();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      master.connect(analyser);
+      master.connect(ctx.destination);
+      this.sound = { ctx, master, analyser };
+    } catch {
+      // Without Web Audio the decks keep their own volume (no instant voice / music mix).
+      this.soundFailed = true;
+    }
+    return this.sound;
+  }
+
+  /** Connects a deck to the mixer, once. */
+  private route(el: HTMLVideoElement) {
+    if (this.routes.has(el)) return;
+    const sound = this.ensureSound();
+    if (!sound) return;
+    try {
+      const { ctx, master } = sound;
+      const source = ctx.createMediaElementSource(el);
+      const plain = ctx.createGain();
+      const voice = ctx.createGain();
+      const music = ctx.createGain();
+      const split = ctx.createChannelSplitter(2);
+      source.connect(plain);
+      plain.connect(master);
+      source.connect(split);
+      split.connect(voice, 0);
+      split.connect(music, 1);
+      voice.connect(master);
+      music.connect(master);
+      voice.gain.value = 0;
+      music.gain.value = 0;
+      this.routes.set(el, { plain, voice, music, target: { plain: 1, voice: 0, music: 0 } });
+      el.volume = 1;
+    } catch {
+      // This element stays on its own volume.
+    }
+  }
+
+  /** Applies the main volume and the voice / music levels to every deck, right away. */
+  private applyVolumes() {
+    const main = clamp(this.mainVolume, 0, 1);
+    for (const [key, el] of this.decks) {
+      if (!isVideo(el)) continue;
+      const r = this.routes.get(el);
+      if (!r) {
+        el.volume = main;
+        continue;
+      }
+      const mix = this.stems[key.split('#')[0]];
+      r.target = { plain: mix ? 0 : main, voice: mix ? mix.voice * main : 0, music: mix ? mix.music * main : 0 };
+      const now = this.sound?.ctx.currentTime ?? 0;
+      for (const name of ['plain', 'voice', 'music'] as const) {
+        try {
+          r[name].gain.setTargetAtTime(r.target[name], now, 0.012);
+        } catch {
+          r[name].gain.value = r.target[name];
+        }
+      }
+    }
+  }
+
+  /**
+   * Clips whose decks are playing their stems preview, with the voice and
+   * music levels chosen for each. Changes are heard immediately.
+   */
+  setStems(stems: Record<string, AudioMix>) {
+    this.stems = stems;
+    this.applyVolumes();
+  }
+
+  /** Loudness of what is being played right now, 0..1 (−1 without Web Audio). For checks and meters. */
+  outputLevel(): number {
+    if (!this.sound) return -1;
+    const data = new Float32Array(this.sound.analyser.fftSize);
+    this.sound.analyser.getFloatTimeDomainData(data);
+    return Math.sqrt(data.reduce((sum, v) => sum + v * v, 0) / data.length);
+  }
+
+  /** How the sound of the deck on screen is being mixed (for checks). */
+  soundState() {
+    const el = this.deckFor(this.cur);
+    const r = isVideo(el) ? this.routes.get(el) : undefined;
+    return { routed: !!r, context: this.sound?.ctx.state ?? 'none', elementVolume: isVideo(el) ? el.volume : null, ...(r?.target ?? {}) };
+  }
+
   setBlurCanvas(el: HTMLCanvasElement | null, enabled: boolean) {
     this.canvas = el;
     this.blur = enabled && !!el;
@@ -83,6 +198,7 @@ class PlayerEngine {
     this.broll = broll;
     this.music = music;
     this.mainVolume = mainVolume;
+    this.applyVolumes();
     this.duration = sequenceDuration(segs);
     usePlayback.setState({ duration: this.duration });
     const t = Math.min(usePlayback.getState().time, this.duration);
@@ -123,7 +239,7 @@ class PlayerEngine {
       // The clip's own speed; the browser keeps the pitch of the voice, as the export does.
       const rate = this.segs[i]?.rate ?? 1;
       if (el.playbackRate !== rate) el.playbackRate = rate;
-      el.volume = clamp(this.mainVolume, 0, 1);
+      this.applyVolumes();
       if (play) el.play().catch(() => this.pause());
     } else this.still = { src, wall: performance.now(), running: play };
     // Park the next deck on its in-point so the jump is instant.
@@ -146,6 +262,8 @@ class PlayerEngine {
     if (t >= this.duration - 0.05) t = 0;
     this.playing = true;
     usePlayback.setState({ playing: true });
+    // Browsers only let sound start after a click or a key press: this is one.
+    if (this.sound && this.sound.ctx.state !== 'running') void this.sound.ctx.resume().catch(() => undefined);
     this.startAt(t);
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame(this.tick);

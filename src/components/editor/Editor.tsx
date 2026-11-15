@@ -5,7 +5,7 @@ import { api } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
 import { useAutoSilence, useAutosave, useMediaSync, useMixPreviews, useShortcuts } from '@/lib/client/hooks';
 import { refreshResources, uploadClips } from '@/lib/client/actions';
-import { player } from '@/lib/client/player';
+import { player, usePlayback } from '@/lib/client/player';
 import { Modal, Toasts } from '@/components/ui';
 import { LocalTranscription } from '@/components/LocalTranscription';
 import type { ServerStatus } from '@/lib/shared/types';
@@ -124,6 +124,11 @@ export default function Editor({ projectId }: { projectId: string }) {
   useMediaSync();
   useAutoSilence();
   useMixPreviews();
+  // Handle for the automated checks of the interface (not available in a production build).
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    (window as unknown as { __verticut?: unknown }).__verticut = { useEditor, usePlayback, player };
+  }, []);
   const saveNow = useAutosave();
   const openHelp = useCallback(() => setHelpOpen(true), []);
   useShortcuts(saveNow, openHelp);

@@ -4,7 +4,7 @@
  *
  *   node scripts/start.mjs        (or double-click Verticut.bat / verticut.sh)
  *
- * On start and then every minute it asks GitHub for new commits. When there
+ * On start and then every 30 seconds it asks GitHub for new commits. When there
  * are some it fast-forwards the checkout; the dev server reloads changed
  * source files by itself, and the launcher reinstalls dependencies and
  * restarts the server only when the update needs it. Nothing is updated
@@ -14,7 +14,7 @@
  * Options:      --sin-actualizar   do not look for updates
  *               --sin-navegador    do not open the browser
  *               --descartar        put local edits aside (git stash) so the update can be applied
- * Environment:  PORT (3000), VERTICUT_UPDATE_SECONDS (60, 0 = off)
+ * Environment:  PORT (3000), VERTICUT_UPDATE_SECONDS (30, 0 = off)
  */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -31,7 +31,7 @@ process.chdir(root);
 const isWin = process.platform === 'win32';
 const flags = new Set(process.argv.slice(2));
 const PORT = Number(process.env.PORT) || 3000;
-const seconds = Number(process.env.VERTICUT_UPDATE_SECONDS ?? 60);
+const seconds = Number(process.env.VERTICUT_UPDATE_SECONDS ?? 30);
 const INTERVAL_MS = Number.isFinite(seconds) && seconds > 0 ? Math.max(5, seconds) * 1000 : 0;
 const AUTO_UPDATE = !flags.has('--sin-actualizar') && INTERVAL_MS > 0;
 const OPEN_BROWSER = !flags.has('--sin-navegador') && process.env.VERTICUT_OPEN !== '0';

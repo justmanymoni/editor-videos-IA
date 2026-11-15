@@ -23,7 +23,7 @@ import {
   toggleHiddenSelected,
   togglePause,
 } from '@/lib/client/actions';
-import { Button, Field, IconButton, ProgressBar, Toggle } from '@/components/ui';
+import { Button, Field, IconButton, ProgressBar, Slider, Toggle } from '@/components/ui';
 
 const REASON_CLASS: Record<CutReason, string> = {
   manual: 'decoration-danger',
@@ -93,23 +93,15 @@ function CleanupBar() {
             onChange={(v) => set((s) => void (s.autoSilence = v), 'autoSilence')}
           />
           <Field label="Silencio mínimo a quitar" hint={formatSeconds(settings.silenceMin, 2)}>
-            <input
-              type="range"
-              min={0.2}
-              max={2}
-              step={0.05}
-              value={settings.silenceMin}
-              onChange={(e) => set((s) => void (s.silenceMin = Number(e.target.value)), 'silenceMin')}
-            />
+            <Slider value={settings.silenceMin} min={0.2} max={2} step={0.05} onChange={(v) => set((s) => void (s.silenceMin = v), 'silenceMin')} />
           </Field>
           <Field label="Margen que se conserva junto a la voz" hint={formatSeconds(settings.silencePadding, 2)}>
-            <input
-              type="range"
+            <Slider
+              value={settings.silencePadding}
               min={0}
               max={0.3}
               step={0.01}
-              value={settings.silencePadding}
-              onChange={(e) => set((s) => void (s.silencePadding = Number(e.target.value)), 'silencePadding')}
+              onChange={(v) => set((s) => void (s.silencePadding = v), 'silencePadding')}
             />
           </Field>
           <Field label="Muletillas (separadas por comas)">

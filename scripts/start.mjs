@@ -73,24 +73,44 @@ function notice(text) {
   lastNotice = text;
 }
 
+/** What this checkout is compared with, and the arguments for `git fetch`. */
+let upstream = '@{u}';
+let fetchArgs = [];
+
 async function canUpdate() {
-  if (!fs.existsSync(path.join(root, '.git'))) return false;
+  if (!fs.existsSync(path.join(root, '.git'))) {
+    notice('Esta carpeta no se descargó con "git clone": la app funciona, pero no se actualizará sola.');
+    return false;
+  }
   if ((await git('--version')).code !== 0) {
     notice('No se encuentra Git: la app funciona, pero no se actualizará sola. Instálalo desde https://git-scm.com');
     return false;
   }
-  return (await git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')).code === 0;
+  if ((await git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')).code === 0) return true;
+  // A branch without a configured upstream: follow the branch of the same name on GitHub.
+  const branch = (await git('rev-parse', '--abbrev-ref', 'HEAD')).out.trim();
+  if (branch && branch !== 'HEAD' && (await git('remote', 'get-url', 'origin')).code === 0) {
+    upstream = 'FETCH_HEAD'; // what the fetch below downloads
+    fetchArgs = ['origin', branch];
+    return true;
+  }
+  notice('Esta copia no está enlazada con GitHub: la app funciona, pero no se actualizará sola.');
+  return false;
 }
 
 /** Number of commits available on GitHub that this computer does not have yet. */
 async function commitsBehind() {
-  const fetched = await git('fetch', '--quiet');
+  const fetched = await git('fetch', '--quiet', ...fetchArgs);
   if (fetched.code !== 0) {
     notice('No se ha podido comprobar si hay actualizaciones (¿sin conexión?). Se volverá a intentar.');
     return 0;
   }
-  const count = await git('rev-list', '--count', 'HEAD..@{u}');
-  return count.code === 0 ? Number(count.out.trim()) || 0 : 0;
+  const count = await git('rev-list', '--count', `HEAD..${upstream}`);
+  if (count.code !== 0) {
+    notice(`No se ha podido comprobar si hay actualizaciones: ${count.err.trim().split('\n')[0]}`);
+    return 0;
+  }
+  return Number(count.out.trim()) || 0;
 }
 
 async function serverBusy() {
@@ -116,7 +136,7 @@ async function pullUpdate({ discard = false } = {}) {
   }
 
   const before = (await git('rev-parse', 'HEAD')).out.trim();
-  let merged = await git('merge', '--ff-only', '--quiet', '@{u}');
+  let merged = await git('merge', '--ff-only', '--quiet', upstream);
   if (merged.code !== 0) {
     // Files rewritten by npm or next can be restored; anything else is the user's work.
     const local = splitLocalChanges(parseStatus((await git('status', '--porcelain', '--untracked-files=no')).out));
@@ -125,7 +145,7 @@ async function pullUpdate({ discard = false } = {}) {
       await git('stash', 'push', '-m', `Verticut ${new Date().toISOString()}`);
       say('Tus cambios locales se han guardado aparte (se recuperan con "git stash pop").');
     }
-    merged = await git('merge', '--ff-only', '--quiet', '@{u}');
+    merged = await git('merge', '--ff-only', '--quiet', upstream);
     if (merged.code !== 0) {
       notice(
         local.user.length > 0 && !discard
@@ -170,8 +190,10 @@ async function installDependencies() {
       ? 'Actualizando los componentes de la app…'
       : 'Instalando los componentes de la app (solo la primera vez, tarda unos minutos)…',
   );
-  // npm is a .cmd file on Windows: it has to run through the shell.
-  const done = await run('npm', ['install', '--no-audit', '--no-fund'], { stdio: 'inherit', shell: isWin });
+  // npm is a .cmd file on Windows: it has to run through the shell, as one command line.
+  const done = isWin
+    ? await run('npm install --no-audit --no-fund', [], { stdio: 'inherit', shell: true })
+    : await run('npm', ['install', '--no-audit', '--no-fund'], { stdio: 'inherit' });
   if (done.code !== 0) {
     say(color('31', 'No se han podido instalar los componentes (npm install ha fallado). Revisa la conexión a internet.'));
     return fs.existsSync(nextBin);

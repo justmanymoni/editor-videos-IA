@@ -9,7 +9,10 @@ import { endsSentence } from './text';
 
 export interface SubWord {
   key: string;
+  /** Text as shown (upper-cased, punctuation stripped…). */
   text: string;
+  /** Text as written, before the style is applied (used when editing a block). */
+  raw?: string;
   start: number;
   end: number;
   breakBefore: boolean;
@@ -48,6 +51,7 @@ export function collectSubWords(clipWords: ClipWords[], style: SubtitleStyle): S
       out.push({
         key: v.key,
         text,
+        raw: v.text,
         start: v.tlStart,
         end: Math.max(v.tlEnd, v.tlStart + FRAME),
         breakBefore: v.breakBefore,

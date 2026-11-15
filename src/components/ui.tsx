@@ -21,10 +21,10 @@ export function Button({
         props.onMouseUp?.(e);
       }}
       className={clsx(
-        'inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-        size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-8 px-3 text-sm',
+        'inline-flex items-center justify-center gap-1.5 rounded font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+        size === 'sm' ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs',
         variant === 'primary' && 'bg-accent text-black hover:bg-accent-strong',
-        variant === 'secondary' && 'border border-line-strong bg-panel-2 text-fg hover:bg-panel-3',
+        variant === 'secondary' && 'bg-panel-3 text-fg hover:bg-line-strong',
         variant === 'ghost' && 'text-muted hover:bg-panel-3 hover:text-fg',
         variant === 'danger' && 'border border-danger/40 text-danger hover:bg-danger/10',
         className,
@@ -113,20 +113,97 @@ export function Slider({
   step?: number;
   onChange: (v: number) => void;
 }) {
-  return <input type="range" className="w-full" value={value} min={min} max={max} step={step} onChange={(e) => onChange(Number(e.target.value))} />;
+  const fill = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  return (
+    <input
+      type="range"
+      className="w-full min-w-0"
+      style={{ '--fill': `${Math.max(0, Math.min(100, fill))}%` } as React.CSSProperties}
+      value={value}
+      min={min}
+      max={max}
+      step={step}
+      onChange={(e) => onChange(Number(e.target.value))}
+    />
+  );
+}
+
+/** One setting per line, CapCut style: name, thin slider and a small number box. */
+export function SliderRow({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  scale = 1,
+  unit = '',
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (v: number) => void;
+  /** Factor between the stored value and the number shown (100 for percentages). */
+  scale?: number;
+  unit?: string;
+}) {
+  const shown = Math.round(value * scale * 100) / 100;
+  return (
+    <div className="flex h-7 items-center gap-2.5">
+      <span className="w-[92px] shrink-0 truncate text-xs text-muted" title={label}>
+        {label}
+      </span>
+      <Slider value={value} min={min} max={max} step={step} onChange={onChange} />
+      <label className="flex h-6 w-[58px] shrink-0 items-center rounded bg-panel-3 px-1.5 text-[11px] text-fg">
+        <input
+          type="number"
+          value={shown}
+          step={step * scale}
+          onChange={(e) => Number.isFinite(e.target.valueAsNumber) && onChange(Math.max(min, Math.min(max, e.target.valueAsNumber / scale)))}
+          className="w-full min-w-0 bg-transparent text-right tabular-nums outline-none"
+          aria-label={label}
+        />
+        {unit && <span className="pl-0.5 text-faint">{unit}</span>}
+      </label>
+    </div>
+  );
+}
+
+/** A named setting with any control at the right. */
+export function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-7 items-center gap-2.5">
+      <span className="w-[92px] shrink-0 truncate text-xs text-muted" title={label}>
+        {label}
+      </span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
+/** Titled block of settings inside a panel. */
+export function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2 border-b border-line px-3.5 py-3 last:border-0">
+      <h3 className="text-xs font-semibold text-fg">{title}</h3>
+      {children}
+    </section>
+  );
 }
 
 export function ColorField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-line-strong bg-panel-2 px-2 py-1">
+    <label className="flex h-6 cursor-pointer items-center gap-1.5 rounded bg-panel-3 px-1.5">
       <input
         type="color"
         value={value}
         onChange={(e) => onChange(e.target.value.toUpperCase())}
-        className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+        className="h-4 w-5 cursor-pointer rounded-sm border-0 bg-transparent p-0"
       />
-      <span className="font-mono text-xs text-muted uppercase">{value}</span>
-    </div>
+      <span className="font-mono text-[10px] text-muted uppercase">{value}</span>
+    </label>
   );
 }
 
@@ -138,11 +215,11 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       onMouseUp={(e) => e.currentTarget.blur()}
-      className="flex items-center justify-between gap-3 text-sm text-fg"
+      className="flex min-h-7 w-full items-center justify-between gap-3 text-left text-xs text-fg"
     >
       <span>{label}</span>
-      <span className={clsx('relative h-5 w-9 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-panel-3')}>
-        <span className={clsx('absolute top-0.5 h-4 w-4 rounded-full transition-all', checked ? 'left-[18px] bg-black' : 'left-0.5 bg-muted')} />
+      <span className={clsx('relative h-4 w-7 shrink-0 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-line-strong')}>
+        <span className={clsx('absolute top-0.5 h-3 w-3 rounded-full transition-all', checked ? 'left-[14px] bg-black' : 'left-0.5 bg-fg')} />
       </span>
     </button>
   );
@@ -158,7 +235,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="flex rounded-md border border-line-strong bg-panel-2 p-0.5">
+    <div className="flex w-full rounded bg-panel-3 p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
@@ -166,8 +243,8 @@ export function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           onMouseUp={(e) => e.currentTarget.blur()}
           className={clsx(
-            'flex-1 rounded px-2 py-1 text-xs font-medium transition-colors',
-            value === o.value ? 'bg-panel-3 text-fg' : 'text-muted hover:text-fg',
+            'flex-1 rounded-sm px-1.5 py-1 text-[11px] font-medium whitespace-nowrap transition-colors',
+            value === o.value ? 'bg-line-strong text-fg' : 'text-muted hover:text-fg',
           )}
         >
           {o.label}

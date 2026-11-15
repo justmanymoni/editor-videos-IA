@@ -1,9 +1,10 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Loader2, Pause, Play, SkipBack, SkipForward, Upload, Volume2 } from 'lucide-react';
+import { Loader2, Pause, Play, SkipBack, SkipForward, Upload } from 'lucide-react';
 import type { MediaInfo } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
+import { overlayRect } from '@/lib/shared/text-curve';
 import { mediaUrl } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
@@ -11,8 +12,13 @@ import { deckKey, player, usePlayback } from '@/lib/client/player';
 import { useKeyedRefs } from '@/lib/client/hooks';
 import { formatTime } from '@/lib/client/format';
 import { uploadClips } from '@/lib/client/actions';
-import { IconButton, Segmented } from '@/components/ui';
+import { IconButton } from '@/components/ui';
 import { SubtitleOverlay } from './SubtitleOverlay';
+import { StageItems, useStageGestures } from './StageItems';
+
+/** Space around the video inside the player column, and height of its controls. */
+export const PLAYER_PADDING = 10;
+export const PLAYER_CONTROLS = 44;
 
 function useFitBox(ref: React.RefObject<HTMLDivElement | null>) {
   const [size, setSize] = useState({ w: 270, h: 480 });
@@ -21,7 +27,7 @@ function useFitBox(ref: React.RefObject<HTMLDivElement | null>) {
     if (!el) return;
     const update = () => {
       const { width, height } = el.getBoundingClientRect();
-      const h = Math.max(160, Math.min(height, (width * 16) / 9));
+      const h = Math.max(120, Math.min(height - 2 * PLAYER_PADDING, ((width - 2 * PLAYER_PADDING) * 16) / 9));
       setSize({ w: (h * 9) / 16, h });
     };
     update();
@@ -36,7 +42,7 @@ function TimeDisplay() {
   const time = usePlayback((s) => s.time);
   const duration = usePlayback((s) => s.duration);
   return (
-    <span className="font-mono text-xs text-muted tabular-nums">
+    <span className="font-mono text-xs whitespace-nowrap text-muted tabular-nums">
       <span className="text-fg">{formatTime(time)}</span> / {formatTime(duration)}
     </span>
   );
@@ -54,8 +60,9 @@ export function Preview() {
   const { w, h } = useFitBox(boxRef);
   const scale = w / OUTPUT_WIDTH;
   const blur = doc.settings.fitMode === 'blur';
+  const { begin, guides } = useStageGestures();
 
-  const deckRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | null) => player.registerDeck(key, el), []));
+  const deckRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | HTMLImageElement | null) => player.registerDeck(key, el), []));
   const overlayRef = useKeyedRefs(useCallback((key: string, el: HTMLVideoElement | HTMLImageElement | null) => player.registerOverlay(key, el), []));
   const audioRef = useKeyedRefs(useCallback((key: string, el: HTMLAudioElement | null) => player.registerAudio(key, el), []));
 
@@ -71,13 +78,18 @@ export function Preview() {
 
   const mainMedia = [...new Set(doc.clips.map((c) => c.mediaId))].map((id) => media[id]).filter((m): m is MediaInfo => !!m);
   const preparing = mainMedia.find((m) => m.status === 'processing' && m.stage?.startsWith('Optimizando'));
-  const sample = pages[0];
+  const deckStyle = { objectFit: blur ? 'contain' : 'cover', opacity: 0 } as const;
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-[#060607]">
-      <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center p-4">
-        <div className="relative overflow-hidden rounded-lg bg-black shadow-2xl ring-1 ring-line" style={{ width: w, height: h }}>
-          <div className="absolute top-0 left-0 origin-top-left" style={{ width: OUTPUT_WIDTH, height: OUTPUT_HEIGHT, transform: `scale(${scale})` }}>
+    <section className="flex h-full min-w-0 flex-col bg-[#060607]">
+      <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
+        <div className="relative overflow-hidden rounded-md bg-black ring-1 ring-line" style={{ width: w, height: h }}>
+          <div
+            data-stage
+            className="absolute top-0 left-0 origin-top-left"
+            style={{ width: OUTPUT_WIDTH, height: OUTPUT_HEIGHT, transform: `scale(${scale})` }}
+            onPointerDown={() => useEditor.getState().setSelection(null)}
+          >
             <canvas
               ref={canvasRef}
               width={54}
@@ -86,60 +98,65 @@ export function Preview() {
               style={{ filter: 'blur(28px) brightness(0.8)', transform: 'scale(1.12)' }}
             />
             {mainMedia.map((m) =>
-              [0, 1].map((slot) => (
-                <video
-                  key={`${m.id}-${slot}`}
-                  ref={deckRef(deckKey(m.id, slot))}
-                  src={(doc.audioMix[m.id] && mixUrls[m.id]) || mediaUrl.preview(m)}
-                  preload="auto"
-                  playsInline
+              m.kind === 'image' ? (
+                <img
+                  key={m.id}
+                  ref={deckRef(deckKey(m.id, 0))}
+                  src={`/api/media/${m.id}/file`}
+                  alt=""
                   className="absolute inset-0 h-full w-full"
-                  style={{ objectFit: blur ? 'contain' : 'cover', opacity: 0 }}
+                  style={deckStyle}
                 />
-              )),
+              ) : (
+                [0, 1].map((slot) => (
+                  <video
+                    key={`${m.id}-${slot}`}
+                    ref={deckRef(deckKey(m.id, slot))}
+                    src={(doc.audioMix[m.id] && mixUrls[m.id]) || mediaUrl.preview(m)}
+                    preload="auto"
+                    playsInline
+                    className="absolute inset-0 h-full w-full"
+                    style={deckStyle}
+                  />
+                ))
+              ),
             )}
             {doc.broll.map((b) => {
               const m = media[b.mediaId];
               if (!m) return null;
+              // Same geometry as the export: covers the frame at scale 1, free position and size otherwise.
+              const rect = overlayRect(m.width, m.height, OUTPUT_WIDTH, OUTPUT_HEIGHT, b.x, b.y, b.scale);
+              const props = {
+                ref: overlayRef(b.id),
+                'data-overlay': b.id,
+                onPointerDown: (e: React.PointerEvent) => begin(e, 'move', { kind: 'broll', item: b }),
+                className: 'absolute max-w-none cursor-move',
+                style: { ...rect, opacity: 0, pointerEvents: 'none' } as const,
+                draggable: false,
+              };
               return m.kind === 'image' ? (
-                <img
-                  key={b.id}
-                  ref={overlayRef(b.id)}
-                  src={`/api/media/${m.id}/file`}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={{ opacity: 0 }}
-                />
+                <img key={b.id} {...props} src={`/api/media/${m.id}/file`} alt="" />
               ) : (
-                <video
-                  key={b.id}
-                  ref={overlayRef(b.id)}
-                  src={mediaUrl.preview(m)}
-                  muted
-                  playsInline
-                  preload="auto"
-                  className="absolute inset-0 h-full w-full object-cover"
-                  style={{ opacity: 0 }}
-                />
+                <video key={b.id} {...props} src={mediaUrl.preview(m)} muted playsInline preload="auto" />
               );
             })}
-            <SubtitleOverlay pages={pages} style={doc.subtitles} sample={playing ? undefined : sample} />
+            <SubtitleOverlay pages={pages} style={doc.subtitles} />
+            <StageItems stageScale={scale} begin={begin} guides={guides} />
           </div>
           {!doc.clips.length && (
-            <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted hover:text-fg">
-              <Upload size={28} />
+            <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 p-4 text-center text-sm text-muted hover:text-fg">
+              <Upload size={26} />
               <span>
-                Arrastra aquí tus clips en bruto
+                Arrastra aquí tus vídeos o fotos
                 <br />
-                <span className="text-xs text-faint">mp4 o mov · varios a la vez</span>
+                <span className="text-xs text-faint">o usa Importar en el panel</span>
               </span>
-              <input type="file" multiple accept="video/*,.mov" hidden onChange={(e) => void uploadClips([...(e.target.files ?? [])])} />
+              <input type="file" multiple accept="video/*,image/*,.mov" hidden onChange={(e) => void uploadClips([...(e.target.files ?? [])])} />
             </label>
           )}
           {preparing && (
-            <div className="absolute inset-x-3 top-3 flex items-center gap-2 rounded-md bg-black/75 px-3 py-2 text-xs">
-              <Loader2 size={13} className="animate-spin text-accent" /> Preparando vista previa de {preparing.name}…{' '}
-              {Math.round(preparing.progress * 100)}%
+            <div className="absolute inset-x-2 top-2 flex items-center gap-2 rounded-md bg-black/75 px-2.5 py-1.5 text-[11px]">
+              <Loader2 size={12} className="shrink-0 animate-spin text-accent" /> Preparando la vista previa… {Math.round(preparing.progress * 100)}%
             </div>
           )}
         </div>
@@ -148,46 +165,23 @@ export function Preview() {
         const m = media[a.mediaId];
         return m ? <audio key={a.id} ref={audioRef(a.id)} src={`/api/media/${m.id}/file`} preload="auto" /> : null;
       })}
-      <div className="flex h-12 shrink-0 items-center justify-center gap-3 border-t border-line px-4">
+      <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-line px-2" style={{ height: PLAYER_CONTROLS }}>
         <IconButton label="Ir al principio (Inicio)" onClick={() => player.seek(0)}>
-          <SkipBack size={16} />
+          <SkipBack size={15} />
         </IconButton>
         <button
           onClick={() => player.toggle()}
           onMouseUp={(e) => e.currentTarget.blur()}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-black hover:bg-accent-strong"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-black hover:bg-accent-strong"
           aria-label={playing ? 'Pausar (espacio)' : 'Reproducir (espacio)'}
           title={playing ? 'Pausar (espacio)' : 'Reproducir (espacio)'}
         >
-          {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" className="ml-0.5" />}
+          {playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" className="ml-0.5" />}
         </button>
         <IconButton label="Ir al final (Fin)" onClick={() => player.seek(usePlayback.getState().duration)}>
-          <SkipForward size={16} />
+          <SkipForward size={15} />
         </IconButton>
         <TimeDisplay />
-        <div className="mx-2 h-5 w-px bg-line" />
-        <div className="w-44" title="Cómo encajar clips horizontales en 9:16">
-          <Segmented
-            value={doc.settings.fitMode}
-            onChange={(v) => useEditor.getState().commit((d) => void (d.settings.fitMode = v))}
-            options={[
-              { value: 'cover', label: 'Rellenar' },
-              { value: 'blur', label: 'Desenfoque' },
-            ]}
-          />
-        </div>
-        <label className="flex items-center gap-1.5 text-muted" title="Volumen del audio original">
-          <Volume2 size={14} />
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={doc.settings.mainVolume}
-            onChange={(e) => useEditor.getState().commit((d) => void (d.settings.mainVolume = Number(e.target.value)), 'mainVolume')}
-            className="w-20"
-          />
-        </label>
       </div>
     </section>
   );

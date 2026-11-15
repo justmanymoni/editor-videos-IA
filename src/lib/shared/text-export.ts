@@ -1,17 +1,18 @@
 /** Plain text and subtitle files (SRT / WebVTT) of the edited video. */
-import type { SubtitleStyle } from './types';
+import { DEFAULT_SUBTITLE_STYLE, type SubtitleStyle } from './types';
 import type { ClipWords } from './timeline';
 import { buildPages, collectSubWords, type SubPage } from './subtitles';
 import { endsSentence } from './text';
 
 /**
- * Text of what is said in the edited video (cut words excluded, corrections
- * applied). One paragraph per clip; set `includeCut` to get the full original.
+ * The transcript: what is said in the edited video, as recognised from the
+ * audio (cut words excluded). Subtitle edits do not change it. Set
+ * `includeCut` to get the full original.
  */
 export function transcriptText(clipWords: ClipWords[], includeCut = false): string {
   const paragraphs: string[] = [];
   for (const cw of clipWords) {
-    const words = cw.views.filter((v) => includeCut || !v.deleted).map((v) => v.text.trim());
+    const words = cw.views.filter((v) => includeCut || !v.deleted).map((v) => v.word.text.trim());
     if (words.length) paragraphs.push(words.join(' '));
   }
   // Clips split from one recording continue the same sentence.
@@ -19,22 +20,7 @@ export function transcriptText(clipWords: ClipWords[], includeCut = false): stri
 }
 
 /** Readable caption layout for SRT/VTT, independent of the burned-in style. */
-const CAPTION_STYLE: SubtitleStyle = {
-  enabled: true,
-  fontId: '',
-  fontSize: 0,
-  textColor: '',
-  highlightColor: '',
-  outlineColor: '',
-  outlineWidth: 0,
-  shadow: 0,
-  positionY: 0,
-  uppercase: false,
-  stripPunctuation: false,
-  wordsPerPage: 9,
-  maxCharsPerLine: 42,
-  activeScale: 1,
-};
+const CAPTION_STYLE: SubtitleStyle = { ...DEFAULT_SUBTITLE_STYLE, uppercase: false, stripPunctuation: false, wordsPerPage: 9, maxCharsPerLine: 42 };
 
 export function captionPages(clipWords: ClipWords[]): SubPage[] {
   return buildPages(collectSubWords(clipWords, CAPTION_STYLE), CAPTION_STYLE);

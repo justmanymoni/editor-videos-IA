@@ -33,12 +33,15 @@ export const api = {
     return { rate: 100, values: new Uint8Array(await res.arrayBuffer()) };
   },
   resources: () => request<{ dir: string; media: MediaInfo[] }>('/api/resources'),
-  startExport: (doc: ProjectDoc, quality: string) => request<{ job: JobInfo }>('/api/export', jsonBody({ doc, quality })).then((r) => r.job),
+  startExport: (doc: ProjectDoc, quality: string, texts: { id: string; dataUrl: string; width: number; height: number }[] = []) =>
+    request<{ job: JobInfo }>('/api/export', jsonBody({ doc, quality, texts })).then((r) => r.job),
   exports: () => request<{ exports: { name: string; url: string; size: number; createdAt: string }[] }>('/api/export').then((r) => r.exports),
   job: (id: string) => request<{ job: JobInfo }>(`/api/jobs/${id}`).then((r) => r.job),
   cancelJob: (id: string) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
   separate: (id: string) => request<{ media: MediaInfo }>(`/api/media/${id}/separate`, jsonBody({})).then((r) => r.media),
   mix: (id: string, voice: number, music: number) => request<{ url?: string; jobId?: string }>(`/api/media/${id}/mix`, jsonBody({ voice, music })),
+  dictate: async (audio: Blob, lang: string) => (await request<{ text: string }>(`/api/dictate?lang=${lang}`, { method: 'POST', body: audio })).text,
+  record: async (audio: Blob) => (await request<{ media: MediaInfo }>('/api/resources/record', { method: 'POST', body: audio })).media,
   installWhisper: (model: string) => request<{ job: JobInfo }>('/api/whisper/setup', jsonBody({ model })).then((r) => r.job),
 };
 

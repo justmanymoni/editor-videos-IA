@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { api } from './api';
 import { useEditor } from './store';
 import { player, usePlayback } from './player';
-import { deleteSelection, splitAtPlayhead, stepFrames } from './actions';
+import { deleteSelection, splitAtPlayhead, stepFrames, trimAtPlayhead } from './actions';
 import { computeSilenceCuts } from '@/lib/shared/cleanup';
 import { replaceCuts } from '@/lib/shared/edit';
 import { buildSegments, sequenceDuration, wordsInClip } from '@/lib/shared/timeline';
@@ -282,6 +282,16 @@ export function useShortcuts(saveNow: () => void, openHelp: () => void) {
         case 'S':
           e.preventDefault();
           splitAtPlayhead();
+          break;
+        case 'q':
+        case 'Q':
+          e.preventDefault();
+          trimAtPlayhead('left');
+          break;
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          trimAtPlayhead('right');
           break;
         case 'Delete':
         case 'Backspace':

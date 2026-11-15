@@ -1,22 +1,7 @@
 'use client';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import {
-  AlertTriangle,
-  Captions,
-  Copy,
-  Download,
-  EyeOff,
-  FileText,
-  Pilcrow,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Scissors,
-  Settings2,
-  Sparkles,
-  X,
-} from 'lucide-react';
+import { AlertTriangle, Captions, Copy, Download, EyeOff, Pilcrow, Play, RefreshCw, RotateCcw, Scissors, Settings2, Sparkles, X } from 'lucide-react';
 import type { CutReason, Range } from '@/lib/shared/types';
 import { keptRanges, type ClipWords, type WordView } from '@/lib/shared/timeline';
 import { overlap, totalLength } from '@/lib/shared/ranges';
@@ -25,10 +10,8 @@ import { useClipWords } from '@/lib/client/derived';
 import { usePlayback } from '@/lib/client/player';
 import { formatSeconds, formatTime } from '@/lib/client/format';
 import {
-  applyScript,
   copyText,
   downloadText,
-  saveScript,
   clearCuts,
   cutSelectedWords,
   playSelectedWords,
@@ -36,12 +19,11 @@ import {
   retranscribe,
   runCleanup,
   seekToWord,
-  setWordText,
   toggleBreakSelected,
   toggleHiddenSelected,
   togglePause,
 } from '@/lib/client/actions';
-import { Button, Field, IconButton, Modal, ProgressBar, Toggle } from '@/components/ui';
+import { Button, Field, IconButton, ProgressBar, Toggle } from '@/components/ui';
 
 const REASON_CLASS: Record<CutReason, string> = {
   manual: 'decoration-danger',
@@ -100,7 +82,7 @@ function CleanupBar() {
           Tomas repetidas
         </Button>
       </div>
-      <Button variant="primary" size="sm" className="mt-1.5 w-full" onClick={() => runCleanup('all')}>
+      <Button size="sm" className="mt-1.5 w-full" onClick={() => runCleanup('all')}>
         <Sparkles size={13} /> Limpiar todo
       </Button>
       {open && (
@@ -166,77 +148,10 @@ function CleanupBar() {
   );
 }
 
-function ScriptDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const saved = useEditor((s) => s.doc?.script ?? '');
-  const [text, setText] = useState(saved);
-  useEffect(() => {
-    if (open) setText(saved);
-    // Only when the dialog opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  return (
-    <Modal open={open} onClose={onClose} title="Tu guión" width="max-w-2xl">
-      <div className="flex flex-col gap-3 text-sm">
-        <p className="text-xs leading-relaxed text-muted">
-          Pega el texto que has escrito para el vídeo. Se sincroniza con tu voz: los subtítulos usarán exactamente tus palabras, ortografía y
-          puntuación, con los tiempos de lo que dices. Lo que digas y no esté en el guión se mantiene tal cual. Hazlo después de limpiar el vídeo.
-        </p>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={12}
-          placeholder="Hoy el día está nublado y quiero que mañana haga sol…"
-          className="w-full resize-y rounded-md border border-line-strong bg-panel-2 p-3 text-sm leading-relaxed focus:border-accent focus:outline-none"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <label className="cursor-pointer text-xs text-muted hover:text-fg">
-            <input
-              type="file"
-              accept=".txt,text/plain"
-              hidden
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) setText(await f.text());
-              }}
-            />
-            Abrir un archivo .txt
-          </label>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => {
-                saveScript(text);
-                onClose();
-              }}
-            >
-              Solo guardar
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!text.trim()}
-              onClick={() => {
-                applyScript(text);
-                onClose();
-              }}
-            >
-              Aplicar a los subtítulos
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
 function TextBar() {
-  const [scriptOpen, setScriptOpen] = useState(false);
-  const hasScript = useEditor((s) => !!s.doc?.script.trim());
   return (
     <div className="flex items-center gap-1 border-b border-line px-3 py-2">
-      <span className="mr-auto text-xs font-semibold">Texto</span>
-      <Button size="sm" variant="ghost" className="px-2" onClick={() => setScriptOpen(true)} title="Pegar o editar tu guión">
-        <FileText size={13} /> Guión
-      </Button>
+      <span className="mr-auto text-xs font-semibold">Texto del audio</span>
       <Button size="sm" variant="ghost" className="px-2" onClick={copyText} title="Copiar el texto del vídeo">
         <Copy size={13} /> Copiar
       </Button>
@@ -246,12 +161,6 @@ function TextBar() {
       <Button size="sm" variant="ghost" className="px-2" onClick={() => downloadText('srt')} title="Descargar subtítulos con tiempos (.srt)">
         <Download size={13} /> SRT
       </Button>
-      {hasScript && (
-        <IconButton label="Descargar el guión (.txt)" className="h-7 w-7" onClick={() => downloadText('script')}>
-          <FileText size={13} />
-        </IconButton>
-      )}
-      <ScriptDialog open={scriptOpen} onClose={() => setScriptOpen(false)} />
     </div>
   );
 }
@@ -390,7 +299,6 @@ export function TranscriptPanel() {
   const selection = useEditor((s) => s.selection);
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ anchor: number; moved: boolean; shift: boolean } | null>(null);
-  const [editing, setEditing] = useState<number | null>(null);
 
   const offsets = useMemo(() => {
     let o = 0;
@@ -496,16 +404,7 @@ export function TranscriptPanel() {
       <CleanupBar />
       <TextBar />
       <div className="relative min-h-0 flex-1">
-        <div
-          ref={ref}
-          className="h-full overflow-y-auto px-4 pt-3 pb-24 select-none"
-          onMouseDown={onMouseDown}
-          onMouseOver={onMouseOver}
-          onDoubleClick={(e) => {
-            const k = indexFrom(e);
-            if (k !== null) setEditing(k);
-          }}
-        >
+        <div ref={ref} className="h-full overflow-y-auto px-4 pt-3 pb-24 select-none" onMouseDown={onMouseDown} onMouseOver={onMouseOver}>
           {!doc.clips.length && <p className="mt-10 text-center text-sm text-faint">Sube un clip para ver aquí su transcripción.</p>}
           {doc.clips.length > 0 && !hasAnyWords && clipWords.every((cw) => !cw.words.length) && (
             <p className="mb-4 text-xs text-faint">
@@ -531,35 +430,17 @@ export function TranscriptPanel() {
                     return (
                       <Fragment key={v.key}>
                         {v.breakBefore && <Pilcrow size={11} className="mx-0.5 inline align-[-1px] text-accent/70" />}
-                        {editing === k ? (
-                          <input
-                            autoFocus
-                            defaultValue={v.text}
-                            onMouseDown={(e) => e.stopPropagation()}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.currentTarget.blur();
-                              if (e.key === 'Escape') setEditing(null);
-                            }}
-                            onBlur={(e) => {
-                              if (editing === k) setWordText(v.key, e.target.value, v.word.text);
-                              setEditing(null);
-                            }}
-                            className="w-28 rounded border border-accent bg-panel-2 px-1 text-[15px] leading-6 text-fg outline-none"
-                            style={{ width: `${Math.max(4, v.text.length + 2)}ch` }}
-                          />
-                        ) : (
-                          <span
-                            data-k={k}
-                            className={wordClass(v, selected)}
-                            title={
-                              v.deleted
-                                ? `Eliminada (${v.reason === 'silence' ? 'silencio' : v.reason === 'filler' ? 'muletilla' : v.reason === 'retake' ? 'toma repetida' : 'manual'})`
-                                : undefined
-                            }
-                          >
-                            {v.text}
-                          </span>
-                        )}
+                        <span
+                          data-k={k}
+                          className={wordClass(v, selected)}
+                          title={
+                            v.deleted
+                              ? `Eliminada (${v.reason === 'silence' ? 'silencio' : v.reason === 'filler' ? 'muletilla' : v.reason === 'retake' ? 'toma repetida' : 'manual'})`
+                              : undefined
+                          }
+                        >
+                          {v.word.text}
+                        </span>
                         {gap >= min ? <PauseMark gap={{ start: v.word.end, end: nextStart }} kept={kept} onToggle={() => togglePause(ci, i)} /> : ' '}
                       </Fragment>
                     );
@@ -570,8 +451,9 @@ export function TranscriptPanel() {
           })}
           {hasAnyWords && (
             <p className="mt-2 border-t border-line pt-3 text-[11px] leading-relaxed text-faint">
-              Clic: saltar a la palabra · Arrastrar o Shift+clic: seleccionar · <b className="text-muted">Supr</b>: cortar · Doble clic: corregir
-              texto · Las etiquetas grises son pausas: clic para quitarlas o recuperarlas.
+              Este es el texto reconocido del audio. Clic: saltar a la palabra · Arrastrar o Shift+clic: seleccionar ·{' '}
+              <b className="text-muted">Supr</b>: cortar ese trozo del vídeo · Las etiquetas grises son pausas. Los subtítulos se editan en el propio
+              vídeo, con doble clic.
             </p>
           )}
         </div>

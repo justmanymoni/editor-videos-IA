@@ -54,16 +54,27 @@ describe('ASS export', () => {
     expect(assTime(3723.456)).toBe('1:02:03.46');
   });
 
-  it('emits one event per word with the active word highlighted', () => {
+  it('emits one event per block and recolours the spoken word with timed transforms', () => {
     const pages = buildPages([sw('HOLA', 1, 1.4), sw('MUNDO', 1.5, 2)], { wordsPerPage: 3, maxCharsPerLine: 16 });
     const ass = buildAss(pages, DEFAULT_SUBTITLE_STYLE);
     const events = ass.split('\n').filter((l) => l.startsWith('Dialogue:'));
-    expect(events).toHaveLength(2);
-    expect(events[0]).toContain('0:00:01.00,0:00:01.50');
-    expect(events[0]).toContain('{\\1c&H00E6FF&}HOLA{\\1c&HFFFFFF&} MUNDO');
-    expect(events[1]).toContain('HOLA {\\1c&H00E6FF&}MUNDO');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toContain('0:00:01.00,0:00:02.35');
+    expect(events[0]).toContain('{\\an5\\pos(540,1382)}');
+    // First word: yellow from the start, white again when the second word starts (500 ms in).
+    expect(events[0]).toContain('{\\1c&HFFFFFF&\\1c&H00E6FF&\\t(500,500,\\1c&HFFFFFF&)}HOLA');
+    expect(events[0]).toContain('{\\1c&HFFFFFF&\\t(500,500,\\1c&H00E6FF&)\\t(1350,1350,\\1c&HFFFFFF&)}MUNDO');
     expect(ass).toContain(`Style: Sub,Montserrat Black,${Math.round(assFontSize(getFont('montserrat-black'), 86) * 100) / 100},`);
-    expect(events[0]).toContain('\\pos(540,1382)');
+  });
+
+  it('writes entrance animations and can turn the highlight off', () => {
+    const pages = buildPages([sw('HOLA', 1, 1.4), sw('MUNDO', 1.5, 2)], { wordsPerPage: 3, maxCharsPerLine: 16 });
+    const plain = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, highlight: false, positionX: 25 });
+    expect(plain).toContain('{\\an5\\pos(270,1382)}{\\1c&HFFFFFF&}HOLA {\\1c&HFFFFFF&}MUNDO');
+    const slide = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, animationIn: 'slide-left', animationOut: 'fade' });
+    expect(slide).toContain('\\move(690,1382,540,1382,0,280)\\fad(280,200)');
+    const type = buildAss(pages, { ...DEFAULT_SUBTITLE_STYLE, highlight: false, animationIn: 'typewriter' });
+    expect(type).toContain('{\\alpha&H00&}H{\\alpha&HFF&\\t(40,40,\\alpha&H00&)}O');
   });
 });
 

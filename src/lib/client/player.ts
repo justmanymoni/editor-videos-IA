@@ -18,10 +18,16 @@ export const deckKey = (mediaId: string, slot: number) => `${mediaId}#${slot}`;
 
 const END_EPS = 0.012;
 
+/** A main-track clip is shown by a <video>, or by an <img> when it is a photo. */
+type Deck = HTMLVideoElement | HTMLImageElement;
+const isVideo = (el: Deck | undefined): el is HTMLVideoElement => el instanceof HTMLVideoElement;
+
 class PlayerEngine {
   private segs: Segment[] = [];
   private duration = 0;
-  private decks = new Map<string, HTMLVideoElement>();
+  private decks = new Map<string, Deck>();
+  /** Clock of the photo being shown (photos have no playback position of their own). */
+  private still = { src: 0, wall: 0, running: false };
   private overlays = new Map<string, HTMLVideoElement | HTMLImageElement>();
   private audios = new Map<string, HTMLAudioElement>();
   private broll: BrollItem[] = [];
@@ -34,19 +40,22 @@ class PlayerEngine {
   private canvas: HTMLCanvasElement | null = null;
   private blur = false;
 
-  registerDeck(key: string, el: HTMLVideoElement | null) {
+  registerDeck(key: string, el: Deck | null) {
     const prev = this.decks.get(key);
     if (prev === el) return;
     if (prev) {
       prev.removeEventListener('seeked', this.onSeeked);
       prev.removeEventListener('loadeddata', this.onSeeked);
+      prev.removeEventListener('load', this.onSeeked);
       prev.removeEventListener('loadedmetadata', this.onReloaded);
     }
     if (el) {
       this.decks.set(key, el);
-      el.addEventListener('seeked', this.onSeeked);
-      el.addEventListener('loadeddata', this.onSeeked);
-      el.addEventListener('loadedmetadata', this.onReloaded);
+      if (isVideo(el)) {
+        el.addEventListener('seeked', this.onSeeked);
+        el.addEventListener('loadeddata', this.onSeeked);
+        el.addEventListener('loadedmetadata', this.onReloaded);
+      } else el.addEventListener('load', this.onSeeked);
       // A deck that appears late (new clip) may be the one we should show.
       if (this.cur >= 0 && this.deckFor(this.cur) === el) queueMicrotask(() => this.seek(usePlayback.getState().time));
     } else this.decks.delete(key);
@@ -88,26 +97,35 @@ class PlayerEngine {
     return s ? (this.decks.get(deckKey(s.mediaId, i % 2)) ?? this.decks.get(deckKey(s.mediaId, 0))) : undefined;
   }
 
-  private show(active: HTMLVideoElement | undefined) {
+  private show(active: Deck | undefined) {
     for (const d of this.decks.values()) {
       const on = d === active;
       d.style.opacity = on ? '1' : '0';
-      if (!on && !d.paused) d.pause();
+      if (!on && isVideo(d) && !d.paused) d.pause();
     }
+  }
+
+  /** Source time of a deck: the video position, or the photo's own clock. */
+  private deckTime(el: Deck) {
+    if (isVideo(el)) return el.currentTime;
+    return this.still.src + (this.still.running ? (performance.now() - this.still.wall) / 1000 : 0);
   }
 
   private activate(i: number, src: number, play: boolean) {
     this.cur = i;
     const el = this.deckFor(i);
     this.show(el);
+    this.still.running = false;
     if (!el) return;
-    if (Math.abs(el.currentTime - src) > 0.01) el.currentTime = src;
-    el.volume = clamp(this.mainVolume, 0, 1);
-    if (play) el.play().catch(() => this.pause());
+    if (isVideo(el)) {
+      if (Math.abs(el.currentTime - src) > 0.01) el.currentTime = src;
+      el.volume = clamp(this.mainVolume, 0, 1);
+      if (play) el.play().catch(() => this.pause());
+    } else this.still = { src, wall: performance.now(), running: play };
     // Park the next deck on its in-point so the jump is instant.
     const next = this.segs[i + 1];
     const nextEl = this.deckFor(i + 1);
-    if (next && nextEl && nextEl !== el && Math.abs(nextEl.currentTime - next.srcStart) > 0.01) nextEl.currentTime = next.srcStart;
+    if (next && isVideo(nextEl) && nextEl !== el && Math.abs(nextEl.currentTime - next.srcStart) > 0.01) nextEl.currentTime = next.srcStart;
   }
 
   private startAt(t: number) {
@@ -133,7 +151,8 @@ class PlayerEngine {
     this.playing = false;
     this.stopAt = null;
     cancelAnimationFrame(this.raf);
-    for (const d of this.decks.values()) if (!d.paused) d.pause();
+    if (this.still.running) this.still = { src: this.still.src + (performance.now() - this.still.wall) / 1000, wall: 0, running: false };
+    for (const d of this.decks.values()) if (isVideo(d) && !d.paused) d.pause();
     for (const o of this.overlays.values()) if (o instanceof HTMLVideoElement && !o.paused) o.pause();
     for (const a of this.audios.values()) if (!a.paused) a.pause();
     usePlayback.setState({ playing: false });
@@ -170,7 +189,7 @@ class PlayerEngine {
     let seg = this.segs[this.cur];
     let el = this.deckFor(this.cur);
     if (!seg || !el) return this.pause();
-    if (el.currentTime >= seg.srcEnd - END_EPS || el.ended) {
+    if (this.deckTime(el) >= seg.srcEnd - END_EPS || (isVideo(el) && el.ended)) {
       if (this.cur + 1 >= this.segs.length) {
         this.pause();
         usePlayback.setState({ time: this.duration });
@@ -181,7 +200,7 @@ class PlayerEngine {
       seg = this.segs[this.cur];
       el = this.deckFor(this.cur)!;
     }
-    const t = seg.tlStart + clamp(el.currentTime - seg.srcStart, 0, seg.tlEnd - seg.tlStart);
+    const t = seg.tlStart + clamp(this.deckTime(el) - seg.srcStart, 0, seg.tlEnd - seg.tlStart);
     if (this.stopAt !== null && t >= this.stopAt) {
       this.pause();
       return;
@@ -198,6 +217,8 @@ class PlayerEngine {
       if (!el) continue;
       const active = t >= b.start && t < b.start + b.duration;
       el.style.opacity = active ? '1' : '0';
+      // Only visible overlays can be clicked and dragged in the preview.
+      el.style.pointerEvents = active ? 'auto' : 'none';
       if (!(el instanceof HTMLVideoElement)) continue;
       const want = b.srcIn + clamp(t - b.start, 0, b.duration);
       if (active && playing) {
@@ -243,14 +264,16 @@ class PlayerEngine {
     const el = this.deckFor(this.cur);
     const ctx = this.canvas.getContext('2d');
     if (!ctx) return;
-    if (!el || el.readyState < 2) {
+    const srcW = !el ? 0 : isVideo(el) ? (el.readyState >= 2 ? el.videoWidth : 0) : el.complete ? el.naturalWidth : 0;
+    const srcH = !el ? 0 : isVideo(el) ? el.videoHeight : el.naturalHeight;
+    if (!el || !srcW || !srcH) {
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
       return;
     }
     const { width: cw, height: ch } = this.canvas;
-    const scale = Math.max(cw / el.videoWidth, ch / el.videoHeight);
-    const w = el.videoWidth * scale;
-    const h = el.videoHeight * scale;
+    const scale = Math.max(cw / srcW, ch / srcH);
+    const w = srcW * scale;
+    const h = srcH * scale;
     ctx.drawImage(el, (cw - w) / 2, (ch - h) / 2, w, h);
   }
 }

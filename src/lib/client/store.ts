@@ -13,6 +13,7 @@ export type Selection =
   | { kind: 'segment'; clipId: string; rangeIndex: number }
   | { kind: 'broll'; id: string }
   | { kind: 'audio'; id: string }
+  | { kind: 'text'; id: string }
   | { kind: 'subtitle'; page: number }
   | null;
 

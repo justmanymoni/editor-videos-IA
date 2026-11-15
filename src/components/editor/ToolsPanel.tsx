@@ -5,28 +5,35 @@ import {
   AlertTriangle,
   AudioLines,
   Film,
+  FolderOpen,
   Image as ImageIcon,
+  Layers,
   Loader2,
+  Mic,
   Music,
   Pause,
   Play,
   Plus,
   RefreshCw,
   Sparkles,
+  Square,
   Trash2,
+  Type,
   Upload,
 } from 'lucide-react';
 import type { MediaInfo } from '@/lib/shared/types';
 import { suggestBroll } from '@/lib/shared/suggest';
-import { mediaUrl } from '@/lib/client/api';
+import { api, mediaUrl } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
 import { useClipWords } from '@/lib/client/derived';
 import { usePlayback } from '@/lib/client/player';
+import { useRecorder } from '@/lib/client/recorder';
 import { formatBytes, formatTime } from '@/lib/client/format';
 import {
   addAudio,
   addBroll,
-  addClipInstance,
+  addToTimeline,
+  addVoiceRecording,
   refreshResources,
   removeMediaFromProject,
   retranscribe,
@@ -34,41 +41,42 @@ import {
   uploadResources,
 } from '@/lib/client/actions';
 import { Button, IconButton, ProgressBar, Segmented } from '@/components/ui';
-import { api } from '@/lib/client/api';
+import { TextTab } from './TextTab';
 
 export const MEDIA_DRAG_TYPE = 'application/x-verticut-media';
 
-type Tab = 'clips' | 'broll' | 'music';
+type Tab = 'media' | 'audio' | 'text';
 
-export function MediaPanel() {
-  const [tab, setTab] = useState<Tab>('clips');
+const TABS = [
+  ['media', 'Multimedia', Film],
+  ['audio', 'Audio', Music],
+  ['text', 'Texto', Type],
+] as const;
+
+/** Left panel, CapCut style: tool tabs on top, their content below. */
+export function ToolsPanel() {
+  const [tab, setTab] = useState<Tab>('media');
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-panel">
-      <div className="flex border-b border-line px-2 pt-2">
-        {(
-          [
-            ['clips', 'Clips', Film],
-            ['broll', 'B-roll', ImageIcon],
-            ['music', 'Música', Music],
-          ] as const
-        ).map(([id, label, Icon]) => (
+    <aside className="flex h-full min-w-0 flex-col bg-panel">
+      <div className="flex shrink-0 gap-1 border-b border-line px-2 py-1.5">
+        {TABS.map(([id, label, Icon]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
             onMouseUp={(e) => e.currentTarget.blur()}
             className={clsx(
-              'flex flex-1 items-center justify-center gap-1.5 border-b-2 px-2 pb-2 text-xs font-semibold transition-colors',
-              tab === id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg',
+              'flex min-w-16 flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-[11px] font-medium transition-colors',
+              tab === id ? 'bg-accent/10 text-accent' : 'text-muted hover:bg-panel-3 hover:text-fg',
             )}
           >
-            <Icon size={13} /> {label}
+            <Icon size={17} /> {label}
           </button>
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'clips' && <ClipsTab />}
-        {tab === 'broll' && <ResourcesTab kind="broll" />}
-        {tab === 'music' && <ResourcesTab kind="music" />}
+        {tab === 'media' && <MediaTab />}
+        {tab === 'audio' && <AudioTab />}
+        {tab === 'text' && <TextTab />}
       </div>
     </aside>
   );
@@ -158,7 +166,7 @@ function MediaStatus({ media }: { media: MediaInfo }) {
   return null;
 }
 
-function TranscriptStatus({ media }: { media: MediaInfo }) {
+export function TranscriptStatus({ media }: { media: MediaInfo }) {
   const t = media.transcript;
   if (!media.hasAudio) return <span className="text-[11px] text-faint">Sin audio</span>;
   if (t.status === 'running' || t.status === 'queued')
@@ -191,7 +199,7 @@ function setMix(mediaId: string, voice: number, music: number, coalesce?: string
 }
 
 /** Separate the clip's voice from its background music and choose what to keep. */
-function AudioControls({ media }: { media: MediaInfo }) {
+export function AudioControls({ media }: { media: MediaInfo }) {
   const mix = useEditor((s) => s.doc?.audioMix[media.id]);
   const mixUrl = useEditor((s) => s.mixUrls[media.id]);
   const sep = media.separation ?? { status: 'none', progress: 0, message: null, error: null };
@@ -267,70 +275,16 @@ function AudioControls({ media }: { media: MediaInfo }) {
   );
 }
 
-function ClipsTab() {
+/** Videos and photos: the project's own files and the resources folder. */
+function MediaTab() {
   const doc = useEditor((s) => s.doc)!;
   const media = useEditor((s) => s.media);
-  const clips = doc.media.map((id) => media[id]).filter((m): m is MediaInfo => !!m && m.role === 'clip');
-  const onTimeline = new Set(doc.clips.map((c) => c.mediaId));
-
-  return (
-    <div className="flex flex-col gap-3 p-3">
-      <DropZone
-        accept="video/*,.mov,.mp4,.m4v,.mkv,.webm"
-        label="Arrastra tus clips aquí (mp4, mov) o haz clic para elegirlos"
-        onFiles={uploadClips}
-      />
-      <Uploads />
-      {clips.map((m, i) => (
-        <div key={m.id} className="group flex gap-2.5 rounded-lg border border-line bg-panel-2 p-2">
-          <Thumb media={m} className="h-[72px] w-[54px]" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="flex items-start justify-between gap-1">
-              <p className="truncate text-xs font-medium" title={m.name}>
-                {i + 1}. {m.name}
-              </p>
-              <div className="-mt-1 -mr-1 flex opacity-0 transition-opacity group-hover:opacity-100">
-                <IconButton label="Volver a transcribir" className="h-6 w-6" onClick={() => void retranscribe(m.id)} disabled={!m.hasAudio}>
-                  <RefreshCw size={12} />
-                </IconButton>
-                <IconButton
-                  label="Quitar del proyecto"
-                  className="h-6 w-6"
-                  onClick={() => confirm(`¿Quitar "${m.name}" del proyecto?`) && removeMediaFromProject(m.id)}
-                >
-                  <Trash2 size={12} />
-                </IconButton>
-              </div>
-            </div>
-            <p className="text-[11px] text-muted tabular-nums">
-              {formatTime(m.duration, false)} · {m.width}×{m.height} · {formatBytes(m.size)}
-            </p>
-            <MediaStatus media={m} />
-            <TranscriptStatus media={m} />
-            {m.hasAudio && m.status !== 'error' && <AudioControls media={m} />}
-            {!onTimeline.has(m.id) && m.status !== 'error' && (
-              <Button size="sm" variant="ghost" className="self-start px-1.5" onClick={() => addClipInstance(m)}>
-                <Plus size={12} /> Añadir a la línea de tiempo
-              </Button>
-            )}
-          </div>
-        </div>
-      ))}
-      {!clips.length && (
-        <p className="px-2 text-center text-xs leading-relaxed text-faint">
-          Sube varios clips a la vez: se colocan en orden en la línea de tiempo y se transcriben automáticamente.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function ResourcesTab({ kind }: { kind: 'broll' | 'music' }) {
   const dir = useEditor((s) => s.resourcesDir);
-  const ids = useEditor((s) => s.resourceIds);
-  const media = useEditor((s) => s.media);
+  const resourceIds = useEditor((s) => s.resourceIds);
   const [refreshing, setRefreshing] = useState(false);
-  const list = ids.map((id) => media[id]).filter((m): m is MediaInfo => !!m && (kind === 'music' ? m.kind === 'audio' : m.kind !== 'audio'));
+  const own = doc.media.map((id) => media[id]).filter((m): m is MediaInfo => !!m && m.kind !== 'audio' && !m.external);
+  const resources = resourceIds.map((id) => media[id]).filter((m): m is MediaInfo => !!m && m.kind !== 'audio');
+  const used = new Set([...doc.clips.map((c) => c.mediaId), ...doc.broll.map((b) => b.mediaId)]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -340,30 +294,163 @@ function ResourcesTab({ kind }: { kind: 'broll' | 'music' }) {
 
   return (
     <div className="flex flex-col gap-3 p-3">
-      <div className="flex items-center gap-2">
+      <DropZone accept="video/*,image/*,audio/*,.mov" label="Importar vídeos, fotos o audio (arrástralos aquí o haz clic)" onFiles={uploadClips} />
+      <Uploads />
+      {own.map((m) => (
+        <div
+          key={m.id}
+          {...dragProps(m)}
+          className="group flex cursor-grab gap-2.5 rounded-lg border border-line bg-panel-2 p-2 active:cursor-grabbing"
+        >
+          <div className="relative shrink-0">
+            <Thumb media={m} className="h-[72px] w-[54px]" />
+            {used.has(m.id) && <span className="absolute top-0.5 left-0.5 rounded bg-black/75 px-1 text-[9px] font-medium text-accent">Añadido</span>}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex items-start justify-between gap-1">
+              <p className="truncate text-xs font-medium" title={m.name}>
+                {m.name}
+              </p>
+              <div className="-mt-1 -mr-1 flex shrink-0">
+                <IconButton
+                  label="Añadir a la línea de tiempo"
+                  className="h-6 w-6 text-accent"
+                  onClick={() => addToTimeline(m)}
+                  disabled={m.status === 'error'}
+                >
+                  <Plus size={14} />
+                </IconButton>
+                {m.kind === 'video' && (
+                  <IconButton
+                    label="Volver a transcribir"
+                    className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                    onClick={() => void retranscribe(m.id)}
+                    disabled={!m.hasAudio}
+                  >
+                    <RefreshCw size={12} />
+                  </IconButton>
+                )}
+                <IconButton
+                  label="Quitar del proyecto"
+                  className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                  onClick={() => confirm(`¿Quitar "${m.name}" del proyecto?`) && removeMediaFromProject(m.id)}
+                >
+                  <Trash2 size={12} />
+                </IconButton>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted tabular-nums">
+              {m.kind === 'image' ? 'Foto' : formatTime(m.duration, false)} · {m.width}×{m.height} · {formatBytes(m.size)}
+            </p>
+            <MediaStatus media={m} />
+            {m.kind === 'video' && <TranscriptStatus media={m} />}
+            {m.hasAudio && m.status !== 'error' && <AudioControls media={m} />}
+          </div>
+        </div>
+      ))}
+      {!own.length && (
+        <p className="px-2 text-center text-xs leading-relaxed text-faint">
+          Los vídeos que importes se colocan en la línea de tiempo y se transcriben solos. Con + añades otra copia; también puedes arrastrarlos a la
+          pista que quieras.
+        </p>
+      )}
+
+      <div className="mt-1 flex items-center gap-2 border-t border-line pt-3">
+        <FolderOpen size={13} className="shrink-0 text-faint" />
         <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-faint" title={dir}>
           {dir || 'recursos/'}
         </p>
-        <IconButton label="Volver a leer la carpeta" className="h-7 w-7" onClick={refresh}>
+        <IconButton label="Volver a leer la carpeta de recursos" className="h-7 w-7" onClick={refresh}>
           <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
         </IconButton>
       </div>
-      <DropZone
-        accept={kind === 'music' ? 'audio/*' : 'video/*,image/*,.mov'}
-        label={kind === 'music' ? 'Añade música (mp3, wav, m4a) a la carpeta de recursos' : 'Añade clips o imágenes a la carpeta de recursos'}
-        onFiles={uploadResources}
-      />
-      <Uploads />
-      {kind === 'broll' && <Suggestions />}
-      <p className="text-[11px] text-faint">
-        {kind === 'music' ? 'Arrastra a la pista de audio o pulsa +.' : 'Arrastra a la pista de B-roll o pulsa + para añadir en el cursor.'}
-      </p>
-      <div className={clsx(kind === 'broll' ? 'grid grid-cols-2 gap-2' : 'flex flex-col gap-2')}>
-        {list.map((m) => (kind === 'music' ? <MusicItem key={m.id} media={m} /> : <BrollCard key={m.id} media={m} />))}
+      <Suggestions />
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2">
+        {resources.map((m) => (
+          <ResourceCard key={m.id} media={m} added={used.has(m.id)} />
+        ))}
       </div>
-      {!list.length && (
-        <p className="text-center text-xs text-faint">La carpeta está vacía. Copia archivos en ella y pulsa recargar, o súbelos aquí.</p>
-      )}
+      {!resources.length && <p className="text-center text-[11px] text-faint">Copia vídeos o fotos en esa carpeta para tenerlos siempre a mano.</p>}
+    </div>
+  );
+}
+
+function ResourceCard({ media, added }: { media: MediaInfo; added: boolean }) {
+  return (
+    <div
+      {...dragProps(media)}
+      className="group relative cursor-grab overflow-hidden rounded-md border border-line bg-panel-2 active:cursor-grabbing"
+      title={media.name}
+    >
+      <Thumb media={media} className="aspect-[9/12] w-full rounded-none" />
+      {added && <span className="absolute top-1 left-1 rounded bg-black/75 px-1 text-[9px] font-medium text-accent">Añadido</span>}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pt-4 pb-1">
+        <p className="truncate text-[11px] font-medium">{media.name}</p>
+        <p className="text-[10px] text-muted">{media.kind === 'image' ? 'Foto' : formatTime(media.duration, false)}</p>
+      </div>
+      {media.status === 'processing' && <ProgressBar className="absolute inset-x-1 top-1" value={media.progress} indeterminate />}
+      <div className="absolute top-1 right-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          onClick={() => addBroll(media, usePlayback.getState().time)}
+          className="flex h-6 w-6 items-center justify-center rounded bg-panel-3 text-fg hover:bg-line-strong"
+          title="Superponer en el cursor (B-roll)"
+        >
+          <Layers size={13} />
+        </button>
+        <button
+          onClick={() => addToTimeline(media)}
+          className="flex h-6 w-6 items-center justify-center rounded bg-accent text-black"
+          title="Añadir a la pista principal"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Music and sounds, plus recording your own voice. */
+function AudioTab() {
+  const ids = useEditor((s) => s.resourceIds);
+  const media = useEditor((s) => s.media);
+  const list = ids.map((id) => media[id]).filter((m): m is MediaInfo => !!m && m.kind === 'audio');
+  const recorder = useRecorder();
+  const [saving, setSaving] = useState(false);
+
+  const toggleRecording = async () => {
+    if (!recorder.recording) return void recorder.start();
+    setSaving(true);
+    const audio = await recorder.stop();
+    if (audio) await addVoiceRecording(audio);
+    setSaving(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-3">
+      <Button variant={recorder.recording ? 'danger' : 'secondary'} className="h-8" onClick={toggleRecording} disabled={saving}>
+        {saving ? (
+          <>
+            <Loader2 size={15} className="animate-spin" /> Guardando…
+          </>
+        ) : recorder.recording ? (
+          <>
+            <Square size={13} fill="currentColor" /> Parar y añadir ({formatTime(recorder.seconds, false)})
+          </>
+        ) : (
+          <>
+            <Mic size={14} className="text-accent" /> Grabar mi voz
+          </>
+        )}
+      </Button>
+      <p className="-mt-1 text-[11px] text-faint">La grabación empieza donde está el cursor y se añade a la pista de audio.</p>
+      <DropZone accept="audio/*" label="Importar música o sonidos (mp3, wav, m4a)" onFiles={uploadResources} />
+      <Uploads />
+      <div className="flex flex-col gap-2">
+        {list.map((m) => (
+          <MusicItem key={m.id} media={m} />
+        ))}
+      </div>
+      {!list.length && <p className="text-center text-xs text-faint">Aún no hay audio. Importa música o graba tu voz.</p>}
     </div>
   );
 }
@@ -376,30 +463,6 @@ function dragProps(media: MediaInfo) {
       e.dataTransfer.effectAllowed = 'copy';
     },
   };
-}
-
-function BrollCard({ media }: { media: MediaInfo }) {
-  return (
-    <div
-      {...dragProps(media)}
-      className="group relative cursor-grab overflow-hidden rounded-md border border-line bg-panel-2 active:cursor-grabbing"
-      title={media.name}
-    >
-      <Thumb media={media} className="aspect-[9/12] w-full rounded-none" />
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pt-4 pb-1">
-        <p className="truncate text-[11px] font-medium">{media.name}</p>
-        <p className="text-[10px] text-muted">{media.kind === 'image' ? 'Imagen' : formatTime(media.duration, false)}</p>
-      </div>
-      {media.status === 'processing' && <ProgressBar className="absolute inset-x-1 top-1" value={media.progress} indeterminate />}
-      <button
-        onClick={() => addBroll(media, usePlayback.getState().time)}
-        className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded bg-accent text-black opacity-0 transition-opacity group-hover:opacity-100"
-        title="Añadir en el cursor"
-      >
-        <Plus size={14} />
-      </button>
-    </div>
-  );
 }
 
 function MusicItem({ media }: { media: MediaInfo }) {

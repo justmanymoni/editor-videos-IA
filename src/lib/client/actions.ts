@@ -5,11 +5,11 @@
  * undoable step.
  */
 import { nanoid } from 'nanoid';
-import type { AudioItem, BrollItem, MainClip, MediaInfo, ProjectDoc, WordOverride } from '@/lib/shared/types';
-import { wordKey } from '@/lib/shared/types';
+import type { AudioItem, BrollItem, MainClip, MediaInfo, ProjectDoc, TextItem, WordOverride } from '@/lib/shared/types';
+import { DEFAULT_TEXT, OUTPUT_HEIGHT, OUTPUT_WIDTH, wordKey } from '@/lib/shared/types';
 import { FRAME, quantize } from '@/lib/shared/ranges';
 import { buildClipWords, buildSegments, keptRanges, sequenceDuration, sourceToTimeline, timelineToSource, wordsInClip } from '@/lib/shared/timeline';
-import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimRange, wordRunRanges } from '@/lib/shared/edit';
+import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, trimItemAt, trimRange, wordRunRanges } from '@/lib/shared/edit';
 import { computeFillerCuts, computeRetakeCuts, computeSilenceCuts } from '@/lib/shared/cleanup';
 import { alignScript } from '@/lib/shared/script';
 import { buildSrt, buildVtt, captionPages, transcriptText } from '@/lib/shared/text-export';
@@ -17,7 +17,7 @@ import { api, uploadFile } from './api';
 import { currentDerived } from './derived';
 import { formatSeconds, formatTime } from './format';
 import { player, usePlayback } from './player';
-import { useEditor } from './store';
+import { useEditor, type Selection } from './store';
 
 const newId = () => nanoid(10);
 const ed = () => useEditor.getState();
@@ -90,6 +90,29 @@ export function setWordText(key: string, text: string, original: string) {
   patchWords([key], (prev) => ({ ...prev, text: value && value !== original ? value : undefined }));
 }
 
+/**
+ * Rewrites the text of one subtitle block (edited in the player). The new
+ * words are spread over the block's spoken words so the timing is kept:
+ * extra words join the last one, and spoken words left without text are hidden.
+ */
+export function setSubtitleText(wordKeys: string[], text: string) {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  const { clipWords } = currentDerived();
+  const original = new Map(clipWords.flatMap((cw) => cw.views.map((v) => [v.key, v.word.text] as const)));
+  ed().commit((d) => {
+    wordKeys.forEach((key, i) => {
+      const mine = i === wordKeys.length - 1 ? tokens.slice(i).join(' ') : (tokens[i] ?? '');
+      const next: WordOverride = { ...d.words[key] };
+      delete next.text;
+      delete next.hidden;
+      if (!mine) next.hidden = true;
+      else if (mine !== original.get(key)) next.text = mine;
+      if (Object.keys(next).length) d.words[key] = next;
+      else delete d.words[key];
+    });
+  });
+}
+
 export function toggleHiddenSelected() {
   const keys = selectedKeys();
   const doc = ed().doc;
@@ -158,19 +181,33 @@ export function togglePause(clipIndex: number, index: number) {
 
 const replaceAt = <T>(list: T[], index: number, items: T[]) => [...list.slice(0, index), ...items, ...list.slice(index + 1)];
 
+/** Tracks whose elements are placed freely in time. */
+export type ItemKind = 'broll' | 'audio' | 'text';
+type AnyItem = BrollItem | AudioItem | TextItem;
+const LIST = { broll: 'broll', audio: 'audio', text: 'texts' } as const;
+const itemsOf = (doc: ProjectDoc, kind: ItemKind) => doc[LIST[kind]] as AnyItem[];
+const isItemSelection = (sel: Selection): sel is { kind: ItemKind; id: string } =>
+  !!sel && (sel.kind === 'broll' || sel.kind === 'audio' || sel.kind === 'text');
+
+function replaceItem(kind: ItemKind, id: string, items: AnyItem[]) {
+  ed().commitDoc((d) => {
+    const list = itemsOf(d, kind);
+    const i = list.findIndex((x) => x.id === id);
+    return i < 0 ? d : { ...d, [LIST[kind]]: replaceAt(list, i, items) };
+  });
+}
+
 export function splitAtPlayhead() {
   const s = ed();
   const doc = s.doc;
   if (!doc) return;
   const t = usePlayback.getState().time;
   const sel = s.selection;
-  if (sel?.kind === 'broll' || sel?.kind === 'audio') {
-    const key = sel.kind === 'broll' ? 'broll' : 'audio';
-    const list = doc[key] as (BrollItem | AudioItem)[];
-    const i = list.findIndex((x) => x.id === sel.id);
-    const parts = i >= 0 ? splitItem(list[i], t, newId) : null;
+  if (isItemSelection(sel)) {
+    const item = itemsOf(doc, sel.kind).find((x) => x.id === sel.id);
+    const parts = item ? splitItem(item, t, newId) : null;
     if (!parts) return s.toast('Coloca el cursor dentro del elemento seleccionado para dividirlo');
-    s.commitDoc((d) => ({ ...d, [key]: replaceAt(d[key] as (BrollItem | AudioItem)[], i, parts) }));
+    replaceItem(sel.kind, sel.id, parts);
     s.setSelection({ kind: sel.kind, id: parts[1].id });
     return;
   }
@@ -190,49 +227,71 @@ export function splitAtPlayhead() {
   s.commitDoc((d) => ({ ...d, clips: replaceAt(d.clips, loc.seg.clipIndex, parts) }));
 }
 
+/**
+ * "Delete left / right" as in CapCut: removes what is before or after the
+ * playhead in the selected element, or in the main clip under the playhead.
+ */
+export function trimAtPlayhead(side: 'left' | 'right') {
+  const s = ed();
+  const doc = s.doc;
+  if (!doc) return;
+  const t = usePlayback.getState().time;
+  const sel = s.selection;
+  if (isItemSelection(sel)) {
+    const item = itemsOf(doc, sel.kind).find((x) => x.id === sel.id);
+    const trimmed = item ? trimItemAt(item, t, side) : null;
+    if (!trimmed) return s.toast('Coloca el cursor dentro del elemento seleccionado');
+    replaceItem(sel.kind, sel.id, [trimmed]);
+    return;
+  }
+  const loc = timelineToSource(currentDerived().segs, t);
+  if (!loc) return;
+  const { seg, src } = loc;
+  if (side === 'left') {
+    if (src - seg.srcStart < FRAME) return s.toast('No hay nada a la izquierda del cursor en este clip');
+    trimSegment(seg.clipId, seg.rangeIndex, 'start', src);
+    player.seek(seg.tlStart);
+  } else {
+    if (seg.srcEnd - src < FRAME) return s.toast('No hay nada a la derecha del cursor en este clip');
+    trimSegment(seg.clipId, seg.rangeIndex, 'end', src);
+  }
+}
+
 export function deleteSelection() {
   const s = ed();
   const sel = s.selection;
   if (!sel || !s.doc) return;
-  switch (sel.kind) {
-    case 'words':
-      cutSelectedWords();
-      return;
-    case 'segment': {
-      s.commitDoc((d) => ({
-        ...d,
-        clips: d.clips.map((c) => {
-          if (c.id !== sel.clipId) return c;
-          const r = keptRanges(c)[sel.rangeIndex];
-          return r ? addCuts(c, [r], 'manual') : c;
-        }),
-      }));
-      break;
-    }
-    case 'broll':
-      s.commitDoc((d) => ({ ...d, broll: d.broll.filter((b) => b.id !== sel.id) }));
-      break;
-    case 'audio':
-      s.commitDoc((d) => ({ ...d, audio: d.audio.filter((a) => a.id !== sel.id) }));
-      break;
-    case 'subtitle': {
-      const page = currentDerived().pages[sel.page];
-      if (page)
-        patchWords(
-          page.words.map((w) => w.key),
-          (prev) => ({ ...prev, hidden: true }),
-        );
-      break;
-    }
+  if (sel.kind === 'words') return cutSelectedWords();
+  if (isItemSelection(sel)) {
+    s.commitDoc((d) => ({ ...d, [LIST[sel.kind]]: itemsOf(d, sel.kind).filter((x) => x.id !== sel.id) }));
+  } else if (sel.kind === 'segment') {
+    s.commitDoc((d) => ({
+      ...d,
+      clips: d.clips.map((c) => {
+        if (c.id !== sel.clipId) return c;
+        const r = keptRanges(c)[sel.rangeIndex];
+        return r ? addCuts(c, [r], 'manual') : c;
+      }),
+    }));
+  } else if (sel.kind === 'subtitle') {
+    const page = currentDerived().pages[sel.page];
+    if (page)
+      patchWords(
+        page.words.map((w) => w.key),
+        (prev) => ({ ...prev, hidden: true }),
+      );
   }
   s.setSelection(null);
 }
+
+/** Longest a clip can be extended: its file length, or an hour for photos. */
+const sourceLength = (m: MediaInfo | undefined, fallback: number) => (m?.kind === 'image' ? 3600 : (m?.duration ?? fallback));
 
 export function trimSegment(clipId: string, rangeIndex: number, edge: 'start' | 'end', src: number) {
   const s = ed();
   s.commitDoc((d) => ({
     ...d,
-    clips: d.clips.map((c) => (c.id === clipId ? trimRange(c, rangeIndex, edge, quantize(src), s.media[c.mediaId]?.duration ?? c.end) : c)),
+    clips: d.clips.map((c) => (c.id === clipId ? trimRange(c, rangeIndex, edge, quantize(src), sourceLength(s.media[c.mediaId], c.end)) : c)),
   }));
 }
 
@@ -241,28 +300,65 @@ export function moveSegment(clipId: string, rangeIndex: number, dropTime: number
   ed().setSelection(null);
 }
 
-export function updateItem(kind: 'broll' | 'audio', id: string, patch: Partial<BrollItem & AudioItem>, coalesceKey?: string) {
+export function updateItem(kind: ItemKind, id: string, patch: Partial<BrollItem & AudioItem & TextItem>, coalesceKey?: string) {
   ed().commit((d) => {
-    const list = d[kind] as (BrollItem | AudioItem)[];
-    const item = list.find((x) => x.id === id);
+    const item = itemsOf(d as ProjectDoc, kind).find((x) => x.id === id);
     if (item) Object.assign(item, patch);
   }, coalesceKey);
 }
 
 const withMedia = (doc: ProjectDoc, id: string): string[] => (doc.media.includes(id) ? doc.media : [...doc.media, id]);
 
-export function addClipInstance(media: MediaInfo) {
+/** How long a photo lasts when it is added to the main track. */
+const STILL_SECONDS = 5;
+
+/**
+ * Adds a video or a photo to the main track: between the clips nearest to
+ * `dropTime`, or at the end. Videos that were never transcribed are transcribed.
+ */
+export function insertClip(media: MediaInfo, dropTime?: number) {
+  if (media.kind === 'audio') return addAudio(media, dropTime ?? usePlayback.getState().time);
   ed().commitDoc((d) => {
     const clip: MainClip = {
       id: newId(),
       mediaId: media.id,
       start: 0,
-      end: media.duration,
+      end: media.kind === 'image' ? STILL_SECONDS : media.duration,
       cuts: [],
-      autoClean: d.settings.autoSilence || undefined,
+      autoClean: (media.kind === 'video' && d.settings.autoSilence) || undefined,
     };
-    return { ...d, media: withMedia(d, media.id), clips: [...d.clips, clip] };
+    let index = d.clips.length;
+    if (dropTime !== undefined) {
+      const segs = buildSegments(d.clips);
+      index = 0;
+      d.clips.forEach((c, i) => {
+        const own = segs.filter((x) => x.clipId === c.id);
+        if (own.length && (own[0].tlStart + own[own.length - 1].tlEnd) / 2 < dropTime) index = i + 1;
+      });
+    }
+    return { ...d, media: withMedia(d, media.id), clips: [...d.clips.slice(0, index), clip, ...d.clips.slice(index)] };
   });
+  if (media.kind === 'video' && media.hasAudio && media.transcript.status === 'none') void retranscribe(media.id);
+}
+
+export const addClipInstance = (media: MediaInfo) => insertClip(media);
+
+/** The "+" of the media panel: after the clip under the playhead (or at the end), audio at the playhead. */
+export function addToTimeline(media: MediaInfo) {
+  const { time, duration } = usePlayback.getState();
+  if (media.kind === 'audio') return addAudio(media, time);
+  if (time < 0.05 || time > duration - 0.05) return insertClip(media);
+  const loc = timelineToSource(currentDerived().segs, time);
+  const clipId = loc?.seg.clipId;
+  const spanEnd = currentDerived()
+    .segs.filter((x) => x.clipId === clipId)
+    .reduce((m, x) => Math.max(m, x.tlEnd), 0);
+  insertClip(media, spanEnd + FRAME);
+}
+
+/** Keeps a media file in the project's panel without placing it on the timeline. */
+export function addToBin(media: MediaInfo) {
+  ed().commitDoc((d) => (d.media.includes(media.id) ? d : { ...d, media: [...d.media, media.id] }));
 }
 
 export function addBroll(media: MediaInfo, start: number, length?: number) {
@@ -275,11 +371,13 @@ export function addBroll(media: MediaInfo, start: number, length?: number) {
     duration: Math.max(0.5, duration),
     srcIn: 0,
   };
+  // Stickers and logos (transparent images) start small, about 45 % of the frame width.
+  if (media.hasAlpha && media.width > 0) item.scale = (0.45 * OUTPUT_WIDTH) / Math.max(OUTPUT_WIDTH, (OUTPUT_HEIGHT * media.width) / media.height);
   ed().commitDoc((d) => ({ ...d, media: withMedia(d, media.id), broll: [...d.broll, item] }));
   ed().setSelection({ kind: 'broll', id: item.id });
 }
 
-export function addAudio(media: MediaInfo, start: number) {
+export function addAudio(media: MediaInfo, start: number, opts: Partial<AudioItem> = {}) {
   const total = usePlayback.getState().duration;
   const s0 = Math.max(0, start);
   const item: AudioItem = {
@@ -291,25 +389,75 @@ export function addAudio(media: MediaInfo, start: number) {
     volume: 0.25,
     fadeIn: 0.5,
     fadeOut: 1,
+    ...opts,
   };
   ed().commitDoc((d) => ({ ...d, media: withMedia(d, media.id), audio: [...d.audio, item] }));
   ed().setSelection({ kind: 'audio', id: item.id });
 }
 
 export function removeMediaFromProject(mediaId: string) {
-  ed().commitDoc((d) => ({
-    ...d,
-    media: d.media.filter((m) => m !== mediaId),
-    clips: d.clips.filter((c) => c.mediaId !== mediaId),
-    broll: d.broll.filter((b) => b.mediaId !== mediaId),
-    audio: d.audio.filter((a) => a.mediaId !== mediaId),
-  }));
+  ed().commitDoc((d) => {
+    const { [mediaId]: _mix, ...audioMix } = d.audioMix;
+    return {
+      ...d,
+      media: d.media.filter((m) => m !== mediaId),
+      clips: d.clips.filter((c) => c.mediaId !== mediaId),
+      broll: d.broll.filter((b) => b.mediaId !== mediaId),
+      audio: d.audio.filter((a) => a.mediaId !== mediaId),
+      audioMix,
+    };
+  });
   ed().setSelection(null);
 }
 
 export function stepFrames(frames: number) {
   player.pause();
   player.seek(usePlayback.getState().time + frames * FRAME);
+}
+
+// ---------------------------------------------------------- manual texts
+
+/** Reading time for a text block: about 0.45 s per word. */
+export const textDuration = (text: string) => Math.max(1.2, Math.min(8, text.trim().split(/\s+/).filter(Boolean).length * 0.45 + 0.6));
+
+const textBlocks = (raw: string) =>
+  raw
+    .split('/')
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+/**
+ * Adds typed or dictated text at the playhead. Slashes separate blocks:
+ * "el lobo / enfurecido / está en el bosque" becomes three texts in a row.
+ */
+export function addTextBlocks(raw: string, style: Partial<TextItem> = {}) {
+  const blocks = textBlocks(raw);
+  if (!blocks.length) return ed().toast('Escribe o dicta un texto primero');
+  let t = usePlayback.getState().time;
+  const items = blocks.map((text): TextItem => {
+    const item = { ...DEFAULT_TEXT, ...style, id: newId(), text, start: t, duration: textDuration(text) };
+    t += item.duration;
+    return item;
+  });
+  ed().commitDoc((d) => ({ ...d, texts: [...d.texts, ...items] }));
+  ed().setSelection({ kind: 'text', id: items[0].id });
+  if (items.length > 1) ed().toast(`${items.length} bloques de texto añadidos`, 'success');
+}
+
+/** Splits one text containing slashes into consecutive texts that share its time span. */
+export function splitTextBySlashes(id: string) {
+  const item = ed().doc?.texts.find((x) => x.id === id);
+  if (!item) return;
+  const blocks = textBlocks(item.text);
+  if (blocks.length < 2) return ed().toast('Escribe una barra / donde quieras cortar el texto');
+  const chars = blocks.reduce((n, b) => n + b.length, 0);
+  let t = item.start;
+  const parts = blocks.map((text, i): TextItem => {
+    const part = { ...item, id: i === 0 ? item.id : newId(), text, start: t, duration: (item.duration * text.length) / chars };
+    t += part.duration;
+    return part;
+  });
+  replaceItem('text', id, parts);
 }
 
 // ------------------------------------------------------- script and text
@@ -341,12 +489,18 @@ export function applyScript(script: string) {
       const prev = d.words[v.key] ?? {};
       const next = { ...prev, text: text && text !== v.word.text ? text : undefined };
       if (next.text === undefined) delete next.text;
+      // Slashes in the script decide where each subtitle block starts.
+      if (res.hasBreaks) {
+        if (res.breaks.includes(i)) next.breakBefore = true;
+        else delete next.breakBefore;
+      }
       if (Object.keys(next).length) d.words[v.key] = next;
       else delete d.words[v.key];
     });
   });
   const extra = res.extraSpoken ? ` · ${res.extraSpoken} palabras dichas que no están en el guión (se mantienen)` : '';
-  s.toast(`Guión aplicado: ${res.matched} palabras coinciden, ${res.changed} corregidas${extra}`, 'success');
+  const blocks = res.hasBreaks ? ` · ${res.breaks.length + 1} bloques de subtítulos por tus barras /` : '';
+  s.toast(`Guión aplicado: ${res.matched} palabras coinciden, ${res.changed} corregidas${blocks}${extra}`, 'success');
 }
 
 function saveFile(name: string, content: string, type = 'text/plain') {
@@ -442,12 +596,21 @@ export function clearCuts(reason: 'silence' | 'filler' | 'retake' | 'manual' | '
 // --------------------------------------------------------------- media
 
 const VIDEO_RE = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
+const IMAGE_RE = /\.(jpe?g|png|webp)$/i;
+const AUDIO_RE = /\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i;
 const RESOURCE_RE = /\.(mp4|mov|m4v|webm|mkv|avi|jpe?g|png|webp|mp3|wav|m4a|aac|ogg|flac|opus)$/i;
 
+/**
+ * Imports files into the project. Videos go straight to the end of the main
+ * track (and are transcribed); photos stay in the panel until they are added
+ * with "+" or dragged; audio goes to the resources folder.
+ */
 export async function uploadClips(files: File[]) {
-  const valid = files.filter((f) => VIDEO_RE.test(f.name));
-  if (valid.length < files.length) ed().toast('Solo se admiten vídeos (mp4, mov…) como clips principales', 'error');
-  for (const file of valid) {
+  const audio = files.filter((f) => AUDIO_RE.test(f.name));
+  const visual = files.filter((f) => VIDEO_RE.test(f.name) || IMAGE_RE.test(f.name));
+  if (audio.length + visual.length < files.length)
+    ed().toast('Formato no admitido. Usa vídeo (mp4, mov), foto (jpg, png) o audio (mp3, wav, m4a)', 'error');
+  for (const file of visual) {
     const id = `${Date.now()}-${file.name}`;
     ed().setUpload({ id, name: file.name, progress: 0, error: null });
     try {
@@ -456,13 +619,15 @@ export async function uploadClips(files: File[]) {
         ed().setUpload({ id, name: file.name, progress: p, error: null }),
       );
       ed().upsertMedia([media]);
-      addClipInstance(media);
-      ed().setUpload({ id, remove: true });
+      if (media.kind === 'video') insertClip(media);
+      else addToBin(media);
     } catch (e) {
-      ed().setUpload({ id, remove: true });
       ed().toast(errorText(e), 'error');
+    } finally {
+      ed().setUpload({ id, remove: true });
     }
   }
+  if (audio.length) await uploadResources(audio);
 }
 
 export async function refreshResources() {
@@ -490,6 +655,30 @@ export async function uploadResources(files: File[]) {
     }
   }
   await refreshResources();
+}
+
+/** Speech to text with the local engine: returns what was said in a microphone recording. */
+export async function dictate(recording: Blob): Promise<string | null> {
+  const lang = ed().doc?.settings.language ?? 'es';
+  try {
+    return (await api.dictate(recording, lang)).trim();
+  } catch (e) {
+    ed().toast(`No se pudo transcribir tu voz: ${errorText(e)}`, 'error');
+    return null;
+  }
+}
+
+/** Saves a microphone recording as audio and places it on the audio track at the playhead. */
+export async function addVoiceRecording(recording: Blob) {
+  try {
+    const media = await api.record(recording);
+    ed().upsertMedia([media]);
+    addAudio(media, usePlayback.getState().time, { duration: media.duration, volume: 1, fadeIn: 0, fadeOut: 0 });
+    void refreshResources();
+    ed().toast('Tu grabación está en la pista de audio', 'success');
+  } catch (e) {
+    ed().toast(`No se pudo guardar la grabación: ${errorText(e)}`, 'error');
+  }
 }
 
 export async function retranscribe(mediaId: string) {

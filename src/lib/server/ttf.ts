@@ -13,6 +13,9 @@ export interface FontFileInfo {
   unitsPerEm: number;
   winAscent: number;
   winDescent: number;
+  /** OS/2 fsSelection flags: the file is the bold / italic face of its family. */
+  bold: boolean;
+  italic: boolean;
 }
 
 function decodeUtf16BE(buf: Buffer, start: number, length: number): string {
@@ -59,5 +62,7 @@ export function readFontInfo(buf: Buffer): FontFileInfo {
     unitsPerEm: buf.readUInt16BE(head + 18),
     winAscent: buf.readUInt16BE(os2 + 74),
     winDescent: buf.readUInt16BE(os2 + 76),
+    bold: (buf.readUInt16BE(os2 + 62) & 0x20) !== 0,
+    italic: (buf.readUInt16BE(os2 + 62) & 0x01) !== 0,
   };
 }

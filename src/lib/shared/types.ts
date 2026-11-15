@@ -45,6 +45,8 @@ export interface MediaInfo {
   height: number;
   fps: number;
   hasAudio: boolean;
+  /** Images with transparency (stickers, logos). */
+  hasAlpha?: boolean;
   videoCodec: string | null;
   audioCodec: string | null;
   hasProxy: boolean;
@@ -115,7 +117,56 @@ export interface BrollItem {
   duration: number;
   /** Offset inside the source (videos only). */
   srcIn: number;
+  /** Centre of the overlay as a fraction of the frame (default 0.5, 0.5). */
+  x?: number;
+  y?: number;
+  /** 1 = covers the whole frame; smaller values make a sticker / picture-in-picture. */
+  scale?: number;
 }
+
+/** Text typed by the user and placed freely on the frame. */
+export interface TextItem {
+  id: string;
+  text: string;
+  start: number;
+  duration: number;
+  /** Centre as a fraction of the frame. */
+  x: number;
+  y: number;
+  scale: number;
+  /** Degrees, clockwise. */
+  rotation: number;
+  fontId: string;
+  /** Pixels in the 1080x1920 frame, before `scale`. */
+  fontSize: number;
+  color: string;
+  outlineColor: string;
+  outlineWidth: number;
+  shadow: number;
+  /** none = straight lines, arc = along a circle, wave = along a sine wave. */
+  curve: 'none' | 'arc' | 'wave';
+  /**
+   * arc: percentage of a full circle the text covers (50 = semicircle,
+   * 100 = circle); negative values bend downwards. wave: height, -100..100.
+   */
+  curveAmount: number;
+}
+
+export const DEFAULT_TEXT: Omit<TextItem, 'id' | 'start' | 'duration'> = {
+  text: 'Tu texto',
+  x: 0.5,
+  y: 0.4,
+  scale: 1,
+  rotation: 0,
+  fontId: 'montserrat-black',
+  fontSize: 96,
+  color: '#FFFFFF',
+  outlineColor: '#000000',
+  outlineWidth: 6,
+  shadow: 4,
+  curve: 'none',
+  curveAmount: 50,
+};
 
 export interface AudioItem {
   id: string;
@@ -129,6 +180,10 @@ export interface AudioItem {
   fadeOut: number;
 }
 
+/** How a subtitle block appears. */
+export type SubtitleAnimation =
+  'none' | 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down' | 'zoom' | 'pop' | 'blur' | 'rotate' | 'typewriter' | 'drop';
+
 export interface SubtitleStyle {
   enabled: boolean;
   fontId: string;
@@ -139,8 +194,14 @@ export interface SubtitleStyle {
   outlineColor: string;
   outlineWidth: number;
   shadow: number;
-  /** Vertical centre of the subtitle block, 0..100 % of the frame height. */
+  /** Centre of the subtitle block, 0..100 % of the frame width and height. */
+  positionX: number;
   positionY: number;
+  /** Colour the word being spoken with `highlightColor`. */
+  highlight: boolean;
+  /** Animation when a block appears, and whether it fades away at the end. */
+  animationIn: SubtitleAnimation;
+  animationOut: 'none' | 'fade';
   uppercase: boolean;
   stripPunctuation: boolean;
   wordsPerPage: number;
@@ -190,6 +251,8 @@ export interface ProjectDoc {
   clips: MainClip[];
   broll: BrollItem[];
   audio: AudioItem[];
+  /** Manual texts placed on the frame. */
+  texts: TextItem[];
   subtitles: SubtitleStyle;
   /** Keyed by `${mediaId}:${wordId}`. */
   words: Record<string, WordOverride>;
@@ -256,7 +319,11 @@ export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   outlineColor: '#000000',
   outlineWidth: 6,
   shadow: 4,
+  positionX: 50,
   positionY: 72,
+  highlight: true,
+  animationIn: 'none',
+  animationOut: 'none',
   uppercase: true,
   stripPunctuation: true,
   wordsPerPage: 3,
@@ -287,6 +354,7 @@ export function createProjectDoc(id: string, name: string, language = 'es'): Pro
     clips: [],
     broll: [],
     audio: [],
+    texts: [],
     subtitles: { ...DEFAULT_SUBTITLE_STYLE },
     words: {},
     script: '',
@@ -304,6 +372,7 @@ export function normalizeProjectDoc(raw: ProjectDoc): ProjectDoc {
     clips: (raw.clips ?? []).map((c) => ({ ...c, cuts: c.cuts ?? [] })),
     broll: raw.broll ?? [],
     audio: raw.audio ?? [],
+    texts: (raw.texts ?? []).map((t) => ({ ...DEFAULT_TEXT, ...t })),
     subtitles: { ...DEFAULT_SUBTITLE_STYLE, ...(raw.subtitles ?? {}) },
     words: raw.words ?? {},
     script: raw.script ?? '',

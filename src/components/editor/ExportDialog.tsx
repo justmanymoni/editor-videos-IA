@@ -6,6 +6,7 @@ import { api } from '@/lib/client/api';
 import { useEditor } from '@/lib/client/store';
 import { useSegments, useSubtitlePages } from '@/lib/client/derived';
 import { formatBytes, formatTime } from '@/lib/client/format';
+import { rasterizeTexts } from '@/lib/client/text-render';
 import { sequenceDuration } from '@/lib/shared/timeline';
 import { Button, Modal, ProgressBar, Segmented } from '@/components/ui';
 
@@ -43,7 +44,8 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const start = async () => {
     setError(null);
     try {
-      const j = await api.startExport(doc, quality);
+      // Manual texts are drawn here, exactly as in the preview, and sent as images.
+      const j = await api.startExport(doc, quality, await rasterizeTexts(doc.texts));
       setJob(j);
       poll.current = setInterval(async () => {
         try {
@@ -84,7 +86,8 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
         </dl>
         <ul className="flex flex-col gap-1 text-xs text-muted">
           <li>
-            {segs.length} fragmentos de {doc.clips.length} clips · {doc.broll.length} B-roll · {doc.audio.length} pistas de audio
+            {segs.length} fragmentos de {doc.clips.length} clips · {doc.broll.length} superposiciones · {doc.texts.length} textos · {doc.audio.length}{' '}
+            audios
           </li>
           <li>{doc.subtitles.enabled ? `${pages.length} bloques de subtítulos incrustados` : 'Sin subtítulos'}</li>
           {pendingTranscripts > 0 && (

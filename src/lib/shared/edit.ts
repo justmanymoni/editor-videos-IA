@@ -2,7 +2,7 @@
  * Pure editing operations on the project document. The store wraps them with
  * undo history; tests exercise them directly.
  */
-import type { AudioItem, BrollItem, Cut, CutReason, MainClip, Range, Word } from './types';
+import type { Cut, CutReason, MainClip, Range, Word } from './types';
 import { FRAME, clamp, clipRanges, removeFromRanges } from './ranges';
 import { buildSegments, keptRanges } from './timeline';
 
@@ -122,12 +122,24 @@ export function moveRange(clips: MainClip[], clipId: string, rangeIndex: number,
   return [...rest.slice(0, target), moving, ...rest.slice(target)];
 }
 
-/** Splits a b-roll or audio item at timeline time t. */
-export function splitItem<T extends BrollItem | AudioItem>(item: T, t: number, newId: IdFactory): [T, T] | null {
+/** Anything placed on a timeline track: b-roll, audio or text. */
+export type TimedItem = { id: string; start: number; duration: number; srcIn?: number };
+
+/** Splits a b-roll, audio or text item at timeline time t. */
+export function splitItem<T extends TimedItem>(item: T, t: number, newId: IdFactory): [T, T] | null {
   if (t <= item.start + FRAME || t >= item.start + item.duration - FRAME) return null;
   const offset = t - item.start;
-  return [
-    { ...item, duration: offset },
-    { ...item, id: newId(), start: t, duration: item.duration - offset, srcIn: item.srcIn + offset },
-  ];
+  const second = { ...item, id: newId(), start: t, duration: item.duration - offset };
+  if (item.srcIn !== undefined) second.srcIn = item.srcIn + offset;
+  return [{ ...item, duration: offset }, second];
+}
+
+/** Removes the part of an item before (left) or after (right) timeline time t. */
+export function trimItemAt<T extends TimedItem>(item: T, t: number, side: 'left' | 'right'): T | null {
+  if (t <= item.start + FRAME || t >= item.start + item.duration - FRAME) return null;
+  const offset = t - item.start;
+  if (side === 'right') return { ...item, duration: offset };
+  const trimmed = { ...item, start: t, duration: item.duration - offset };
+  if (item.srcIn !== undefined) trimmed.srcIn = item.srcIn + offset;
+  return trimmed;
 }

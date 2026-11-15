@@ -3,8 +3,10 @@ import { Kbd, Modal } from '@/components/ui';
 
 const ROWS: [string, string][] = [
   ['Espacio', 'Reproducir / pausar'],
-  ['S', 'Dividir en el cursor (clip, B-roll, audio o subtítulo seleccionado)'],
-  ['Supr / Retroceso', 'Borrar la selección (palabras, segmento, B-roll, audio, subtítulo)'],
+  ['S', 'Dividir en el cursor (el elemento seleccionado o el clip principal)'],
+  ['Q', 'Borrar lo que queda a la izquierda del cursor'],
+  ['W', 'Borrar lo que queda a la derecha del cursor'],
+  ['Supr / Retroceso', 'Eliminar la selección (palabras, clip, texto, superposición, audio, subtítulo)'],
   ['Ctrl + Z', 'Deshacer'],
   ['Ctrl + Shift + Z / Ctrl + Y', 'Rehacer'],
   ['← / →', 'Fotograma anterior / siguiente'],

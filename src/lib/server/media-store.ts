@@ -112,7 +112,7 @@ export async function registerFile(opts: { id?: string; filePath: string; name: 
   const ext = extOf(opts.name);
   const kind = kindFor(ext, info.hasVideo);
   if (kind === 'audio' && !info.hasAudio) throw new Error('El archivo no contiene audio ni vídeo');
-  if (opts.role === 'clip' && kind !== 'video') throw new Error('Los clips principales deben ser vídeos (mp4, mov…)');
+  if (opts.role === 'clip' && kind === 'audio') throw new Error('Aquí van vídeos o fotos; el audio se añade desde la pestaña Audio');
   const rec: MediaRecord = {
     id: opts.id ?? newMediaId(),
     name: opts.name,
@@ -126,6 +126,7 @@ export async function registerFile(opts: { id?: string; filePath: string; name: 
     height: info.height,
     fps: info.fps,
     hasAudio: kind !== 'image' && info.hasAudio,
+    hasAlpha: kind === 'image' && /^(rgba|bgra|argb|abgr|ya\d|yuva|gbrap|pal8)/.test(info.pixFmt ?? ''),
     videoCodec: info.videoCodec,
     audioCodec: info.audioCodec,
     hasProxy: false,

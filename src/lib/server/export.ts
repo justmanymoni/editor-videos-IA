@@ -17,6 +17,7 @@ import { buildClipWords, buildSegments, sequenceDuration, type Segment } from '.
 import { buildPages, collectSubWords } from '../shared/subtitles';
 import { buildAss } from '../shared/ass';
 import { getFont } from '../shared/fonts';
+import { overlayRect } from '../shared/text-curve';
 import { config } from './config';
 import { ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
 import type { JobContext } from './jobs';
@@ -27,6 +28,8 @@ export interface PlanMedia {
   kind: 'video' | 'image' | 'audio';
   sourcePath: string;
   hasAudio: boolean;
+  width?: number;
+  height?: number;
   /** Separated voice and music (FLAC), when available. */
   stems?: { voice: string; music: string };
 }
@@ -39,6 +42,14 @@ export interface ExportPlan {
   fontFile: string | null;
 }
 
+/** A manual text rendered to a transparent PNG by the editor (file relative to the work folder). */
+export interface TextImage {
+  id: string;
+  file: string;
+  width: number;
+  height: number;
+}
+
 export type ExportQuality = 'high' | 'normal' | 'fast';
 
 const W = OUTPUT_WIDTH;
@@ -46,6 +57,7 @@ const H = OUTPUT_HEIGHT;
 const FPS = OUTPUT_FPS;
 const HALF = 0.5 / FPS;
 const num = (x: number) => String(Math.round(x * 100000) / 100000);
+const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 function fitChain(input: string, output: string, mode: ProjectDoc['settings']['fitMode'], k: number): string[] {
   if (mode !== 'blur') {
@@ -59,7 +71,12 @@ function fitChain(input: string, output: string, mode: ProjectDoc['settings']['f
   ];
 }
 
-export function buildExportPlan(doc: ProjectDoc, media: Map<string, PlanMedia>, transcripts: Record<string, Word[] | undefined>): ExportPlan {
+export function buildExportPlan(
+  doc: ProjectDoc,
+  media: Map<string, PlanMedia>,
+  transcripts: Record<string, Word[] | undefined>,
+  textImages: TextImage[] = [],
+): ExportPlan {
   const segs = buildSegments(doc.clips);
   const total = sequenceDuration(segs);
   if (total < FRAME) throw new Error('La línea de tiempo está vacía: añade un clip antes de exportar.');
@@ -85,7 +102,9 @@ export function buildExportPlan(doc: ProjectDoc, media: Map<string, PlanMedia>, 
     const span = run[run.length - 1].srcEnd - s0;
     const expr = run.map((s) => `gte(t,${num(s.srcStart - s0 - HALF)})*lt(t,${num(s.srcEnd - s0 - HALF)})`).join('+');
     const vin = inputs.length;
-    inputs.push(['-ss', num(s0), '-t', num(span + 0.5), '-i', m.sourcePath]);
+    // A photo on the main track is a looped still: any part of it looks the same.
+    if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(span + 0.5), '-i', m.sourcePath]);
+    else inputs.push(['-ss', num(s0), '-t', num(span + 0.5), '-i', m.sourcePath]);
     filters.push(`[${vin}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},select='${expr}',setpts=N/${FPS}/TB[vr${k}]`);
     filters.push(...fitChain(`vr${k}`, `v${k}`, doc.settings.fitMode, k));
     let audio = `${vin}:a:0`;
@@ -121,10 +140,15 @@ export function buildExportPlan(doc: ProjectDoc, media: Map<string, PlanMedia>, 
       const idx = inputs.length;
       if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(dur + 0.2), '-i', m.sourcePath]);
       else inputs.push(['-ss', num(Math.max(0, b.srcIn)), '-t', num(dur + 0.2), '-i', m.sourcePath]);
+      // Full-frame b-roll is cropped to cover; a moved or resized overlay keeps its shape (sticker, picture-in-picture).
+      const rect = overlayRect(m.width ?? 0, m.height ?? 0, W, H, b.x ?? 0.5, b.y ?? 0.5, b.scale ?? 1);
+      const full = (b.scale ?? 1) === 1 && (b.x ?? 0.5) === 0.5 && (b.y ?? 0.5) === 0.5;
+      const size = full ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}` : `scale=${even(rect.width)}:${even(rect.height)}`;
+      const at = full ? '0:0' : `${Math.round(rect.left)}:${Math.round(rect.top)}`;
       filters.push(
-        `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p,trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB[b${j}]`,
+        `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},${size},setsar=1,format=yuva420p,trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB[b${j}]`,
       );
-      filters.push(`[${video}][b${j}]overlay=0:0:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vb${j}]`);
+      filters.push(`[${video}][b${j}]overlay=${at}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vb${j}]`);
       video = `vb${j}`;
     });
 
@@ -140,6 +164,20 @@ export function buildExportPlan(doc: ProjectDoc, media: Map<string, PlanMedia>, 
       video = 'vsub';
     }
   }
+  // Manual texts (pre-rendered PNGs), on top of everything.
+  doc.texts.forEach((t, j) => {
+    const img = textImages.find((x) => x.id === t.id);
+    const start = clamp(t.start, 0, total);
+    const end = Math.min(total, t.start + t.duration);
+    if (!img || end - start < FRAME) return;
+    const idx = inputs.length;
+    inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(end - start + 0.2), '-i', img.file]);
+    filters.push(`[${idx}:v:0]format=rgba,setpts=PTS-STARTPTS+${num(start)}/TB[t${j}]`);
+    const x = Math.round(t.x * W - img.width / 2);
+    const y = Math.round(t.y * H - img.height / 2);
+    filters.push(`[${video}][t${j}]overlay=${x}:${y}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vt${j}]`);
+    video = `vt${j}`;
+  });
   filters.push(`[${video}]format=yuv420p[vout]`);
 
   // Audio: main track + music.
@@ -186,7 +224,15 @@ const slug = (s: string) =>
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 
-export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: JobContext) {
+/** PNG of a manual text as sent by the editor. */
+export interface TextPng {
+  id: string;
+  png: Buffer;
+  width: number;
+  height: number;
+}
+
+export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: JobContext, texts: TextPng[] = []) {
   ctx.progress(0, 'Preparando');
   const ids = new Set([...doc.clips.map((c) => c.mediaId), ...doc.broll.map((b) => b.mediaId), ...doc.audio.map((a) => a.mediaId)]);
   const media = new Map<string, PlanMedia>();
@@ -204,14 +250,21 @@ export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: Jo
       rec.separation?.status === 'done' && existsSync(paths.voice) && existsSync(paths.music)
         ? { voice: paths.voice, music: paths.music }
         : undefined;
-    media.set(id, { id, kind: rec.kind, sourcePath: rec.sourcePath, hasAudio: rec.hasAudio, stems });
+    media.set(id, { id, kind: rec.kind, sourcePath: rec.sourcePath, hasAudio: rec.hasAudio, width: rec.width, height: rec.height, stems });
     if (rec.role === 'clip') transcripts[id] = (await readTranscript(id))?.words;
   }
 
-  const plan = buildExportPlan(doc, media, transcripts);
   const name = `${slug(doc.name)}-${stamp()}.mp4`;
   const out = path.join(exportsDir(), name);
   const work = path.join(exportsDir(), `.work-${ctx.id}`);
+  await mkdir(work, { recursive: true });
+  const textImages: TextImage[] = [];
+  for (const [i, t] of texts.entries()) {
+    const file = `text-${i}.png`;
+    await writeFile(path.join(work, file), t.png);
+    textImages.push({ id: t.id, file, width: t.width, height: t.height });
+  }
+  const plan = buildExportPlan(doc, media, transcripts, textImages);
   await renderPlan(plan, out, work, quality, (p) => ctx.progress(0.01 + p * 0.98, 'Renderizando'), ctx.signal);
   const size = (await stat(out)).size;
   return { name, url: `/api/exports/${encodeURIComponent(name)}`, duration: plan.duration, size };

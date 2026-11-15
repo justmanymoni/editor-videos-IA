@@ -4,11 +4,12 @@
  * uploads from the editor are saved into the same folder.
  */
 import path from 'node:path';
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { config } from './config';
+import { ffmpeg } from './ffmpeg';
 import { enqueueIngest } from './ingest';
 import { AUDIO_EXT, IMAGE_EXT, VIDEO_EXT, extOf, getMedia, registerFile, writeJsonAtomic, type MediaRecord } from './media-store';
 
@@ -104,5 +105,24 @@ export async function uploadResource(name: string, body: ReadableStream<Uint8Arr
   const entry = index[file];
   const rec = entry && (await getMedia(entry.id));
   if (!rec) throw new Error('No se pudo leer el archivo subido');
+  return rec;
+}
+
+/** Saves a microphone recording (any browser format) as an .m4a in the resources folder. */
+export async function saveRecording(body: ReadableStream<Uint8Array>): Promise<MediaRecord> {
+  await mkdir(config.resourcesDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  const raw = path.join(config.resourcesDir, `.grabacion-${stamp}.tmp`);
+  const file = await uniquePath(config.resourcesDir, `voz-${stamp}.m4a`);
+  try {
+    await pipeline(Readable.fromWeb(body as import('node:stream/web').ReadableStream), createWriteStream(raw));
+    await ffmpeg(['-y', '-loglevel', 'error', '-i', raw, '-vn', '-ac', '1', '-ar', '48000', '-c:a', 'aac', '-b:a', '128k', file]);
+  } finally {
+    await rm(raw, { force: true });
+  }
+  await scanResources();
+  const entry = (await readIndex())[file];
+  const rec = entry && (await getMedia(entry.id));
+  if (!rec) throw new Error('No se pudo guardar la grabación');
   return rec;
 }

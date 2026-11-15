@@ -13,15 +13,32 @@ export interface ScriptAlignment {
   extraSpoken: number;
   /** Script words that could not be placed on a spoken word and were attached to a neighbour. */
   attached: number;
+  /** Spoken words (indices) that start a new subtitle block: the script had a "/" before them. */
+  breaks: number[];
+  /** True when the script contains at least one "/". */
+  hasBreaks: boolean;
 }
 
-export function scriptTokens(script: string): string[] {
-  return script
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter((t) => t && normalizeWord(t));
+/**
+ * Words of the script, and where the user typed a slash: "el lobo / enfurecido"
+ * means a new subtitle block starts at "enfurecido".
+ */
+export function parseScript(script: string): { tokens: string[]; breakBefore: boolean[] } {
+  const tokens: string[] = [];
+  const breakBefore: boolean[] = [];
+  let pending = false;
+  for (const raw of script.replace(/\//g, ' / ').split(/\s+/)) {
+    if (raw === '/') pending = tokens.length > 0;
+    else if (raw && normalizeWord(raw)) {
+      tokens.push(raw);
+      breakBefore.push(pending);
+      pending = false;
+    }
+  }
+  return { tokens, breakBefore };
 }
+
+export const scriptTokens = (script: string) => parseScript(script).tokens;
 
 function similarity(a: string, b: string): number {
   if (a === b) return 1;
@@ -41,12 +58,20 @@ const MAX_CELLS = 30_000_000;
  * while the order of the speech is respected.
  */
 export function alignScript(spoken: string[], script: string): ScriptAlignment {
-  const tokens = scriptTokens(script);
+  const { tokens, breakBefore } = parseScript(script);
   const a = spoken.map(normalizeWord);
   const b = tokens.map(normalizeWord);
   const n = a.length;
   const m = b.length;
-  const result: ScriptAlignment = { texts: new Map(), matched: 0, changed: 0, extraSpoken: 0, attached: 0 };
+  const result: ScriptAlignment = {
+    texts: new Map(),
+    matched: 0,
+    changed: 0,
+    extraSpoken: 0,
+    attached: 0,
+    breaks: [],
+    hasBreaks: breakBefore.some(Boolean),
+  };
   if (!n || !m) return result;
   if ((n + 1) * (m + 1) > MAX_CELLS)
     throw new Error('El guión o la transcripción son demasiado largos para alinearlos de una vez. Pégalo por partes.');
@@ -77,6 +102,7 @@ export function alignScript(spoken: string[], script: string): ScriptAlignment {
 
   // Walk back: pairs (spoken i ↔ script j) and unpaired script tokens.
   const assigned: string[][] = Array.from({ length: n }, () => []);
+  const spokenOf = new Array<number>(m).fill(-1);
   const orphans: { after: number; token: string }[] = [];
   let i = n;
   let j = m;
@@ -84,6 +110,7 @@ export function alignScript(spoken: string[], script: string): ScriptAlignment {
     const mv = move[i * W + j];
     if (i > 0 && j > 0 && mv === 1) {
       assigned[i - 1].unshift(tokens[j - 1]);
+      spokenOf[j - 1] = i - 1;
       if (a[i - 1] === b[j - 1]) result.matched++;
       i--;
       j--;
@@ -109,6 +136,15 @@ export function alignScript(spoken: string[], script: string): ScriptAlignment {
     }
     result.attached++;
   }
+
+  // A slash starts a block at the next script word that has a spoken partner.
+  const breaks = new Set<number>();
+  breakBefore.forEach((brk, j) => {
+    if (!brk) return;
+    const k = spokenOf.findIndex((sp, idx) => idx >= j && sp >= 0);
+    if (k >= 0 && spokenOf[k] > 0) breaks.add(spokenOf[k]);
+  });
+  result.breaks = [...breaks].sort((x, y) => x - y);
 
   assigned.forEach((t, idx) => {
     if (!t.length) return;

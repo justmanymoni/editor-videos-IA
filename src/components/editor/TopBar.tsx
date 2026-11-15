@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRef } from 'react';
-import { CircleHelp, Download, FileDown, FileUp, Redo2, Undo2 } from 'lucide-react';
+import { CircleHelp, Download, FileDown, FileUp, PanelRight, PanelsLeftRight, Redo2, RotateCcw, Undo2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { ProjectDoc } from '@/lib/shared/types';
 import { normalizeProjectDoc } from '@/lib/shared/types';
@@ -37,7 +37,16 @@ function TranscriberBadge() {
   );
 }
 
-export function TopBar({ onExport, onHelp, onSave }: { onExport: () => void; onHelp: () => void; onSave: () => void }) {
+interface TopBarProps {
+  onExport: () => void;
+  onHelp: () => void;
+  onSave: () => void;
+  playerSide: 'center' | 'right';
+  onPlayerSide: (side: 'center' | 'right') => void;
+  onResetLayout: () => void;
+}
+
+export function TopBar({ onExport, onHelp, onSave, playerSide, onPlayerSide, onResetLayout }: TopBarProps) {
   const name = useEditor((s) => s.doc?.name ?? '');
   const canUndo = useEditor((s) => s.past.length > 0);
   const canRedo = useEditor((s) => s.future.length > 0);
@@ -95,6 +104,16 @@ export function TopBar({ onExport, onHelp, onSave }: { onExport: () => void; onH
       </IconButton>
       <IconButton label="Rehacer (Ctrl+Shift+Z)" disabled={!canRedo} onClick={() => useEditor.getState().redo()}>
         <Redo2 size={16} />
+      </IconButton>
+      <div className="h-5 w-px bg-line" />
+      <IconButton label="Reproductor en el centro" active={playerSide === 'center'} onClick={() => onPlayerSide('center')}>
+        <PanelsLeftRight size={16} />
+      </IconButton>
+      <IconButton label="Reproductor a la derecha" active={playerSide === 'right'} onClick={() => onPlayerSide('right')}>
+        <PanelRight size={16} />
+      </IconButton>
+      <IconButton label="Restablecer el tamaño de los paneles" onClick={onResetLayout}>
+        <RotateCcw size={15} />
       </IconButton>
       <div className="h-5 w-px bg-line" />
       <IconButton label="Descargar proyecto (JSON)" onClick={downloadJson}>

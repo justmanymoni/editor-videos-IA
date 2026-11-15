@@ -7,7 +7,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { config } from '@/lib/server/config';
 import { errorResponse } from '@/lib/server/http';
 import { enqueueIngest, enqueueTranscribe, resumeInterrupted } from '@/lib/server/ingest';
-import { VIDEO_EXT, extOf, getMedia, mediaPaths, newMediaId, registerFile, toPublic } from '@/lib/server/media-store';
+import { IMAGE_EXT, VIDEO_EXT, extOf, getMedia, mediaPaths, newMediaId, registerFile, toPublic } from '@/lib/server/media-store';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
   const name = path.basename(url.searchParams.get('name') || 'clip.mp4');
   const language = url.searchParams.get('lang') || config.defaultLanguage;
   const ext = extOf(name);
-  if (!VIDEO_EXT.includes(ext)) return errorResponse(new Error(`Formato no admitido para clips: .${ext || '?'} (usa mp4 o mov)`), 415);
+  if (![...VIDEO_EXT, ...IMAGE_EXT].includes(ext))
+    return errorResponse(new Error(`Formato no admitido: .${ext || '?'} (usa mp4, mov, jpg o png)`), 415);
   if (!req.body) return errorResponse(new Error('Cuerpo vacío'), 400);
 
   const id = newMediaId();

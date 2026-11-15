@@ -35,6 +35,18 @@ describe('script alignment', () => {
   });
 });
 
+describe('script slashes', () => {
+  it('turns "/" into subtitle block starts, wherever the slash is typed', () => {
+    const spoken = ['el', 'lobo', 'enfurecido', 'esta', 'en', 'el', 'bosque'];
+    const res = alignScript(spoken, 'El lobo / enfurecido/ está en el bosque');
+    expect(res.hasBreaks).toBe(true);
+    expect(res.breaks).toEqual([2, 3]);
+    expect(res.texts.get(2)).toBeUndefined(); // "enfurecido" unchanged, no slash in the text
+    expect(res.texts.get(3)).toBe('está');
+    expect(alignScript(spoken, 'El lobo enfurecido está en el bosque').hasBreaks).toBe(false);
+  });
+});
+
 describe('text export', () => {
   const words: Word[] = ['Hola', 'a', 'todos.', 'Eh', 'esto', 'es', 'una', 'prueba.'].map((text, i) => ({
     id: `w${i}`,
@@ -45,12 +57,12 @@ describe('text export', () => {
   const clip: MainClip = { id: 'c', mediaId: 'm', start: 0, end: 5, cuts: [{ start: 1.7, end: 2.1, reason: 'filler' }] };
   const cw = buildClipWords({ clips: [clip], words: { 'm:w4': { text: 'ESTO' } } }, { m: words }, buildSegments([clip]));
 
-  it('exports the final text with corrections and without cut words', () => {
-    expect(transcriptText(cw)).toBe('Hola a todos. ESTO es una prueba.');
-    expect(transcriptText(cw, true)).toBe('Hola a todos. Eh ESTO es una prueba.');
+  it('exports the transcript as recognised, without cut words: subtitle edits do not change it', () => {
+    expect(transcriptText(cw)).toBe('Hola a todos. esto es una prueba.');
+    expect(transcriptText(cw, true)).toBe('Hola a todos. Eh esto es una prueba.');
   });
 
-  it('builds SRT and VTT with edited timings', () => {
+  it('builds SRT and VTT with the edited subtitle text and timings', () => {
     const pages = captionPages(cw);
     const srt = buildSrt(pages);
     expect(srt.startsWith('1\n00:00:00,500 --> ')).toBe(true);

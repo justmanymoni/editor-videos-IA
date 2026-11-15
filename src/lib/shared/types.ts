@@ -298,7 +298,41 @@ export interface ProjectSummary {
   clipCount: number;
   /** Media whose thumbnail represents the project: its first clip. */
   thumbMediaId: string | null;
+  /** Folder of the home screen it was put in, if any. */
+  folderId: string | null;
 }
+
+/** A folder of projects on the home screen. */
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/** General settings of the app: what new projects start with, and how it exports. */
+export interface AppSettings {
+  /** Language new clips are transcribed in ("auto" = detect). */
+  language: string;
+  /** Remove silences automatically from the clips of new projects. */
+  autoSilence: boolean;
+  /** Shortest silence that is removed, in seconds. */
+  silenceMin: number;
+  /** How horizontal clips fill the vertical frame in new projects. */
+  fitMode: FitMode;
+  /** Quick style (see subtitle-presets) the subtitles of new projects start with. */
+  subtitlePreset: string;
+  /** Quality selected when the export dialog opens. */
+  exportQuality: 'fast' | 'normal' | 'high';
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  language: 'es',
+  autoSilence: true,
+  silenceMin: 0.4,
+  fitMode: 'cover',
+  subtitlePreset: 'amarillo',
+  exportQuality: 'normal',
+};
 
 export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup' | 'separate' | 'mix';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';

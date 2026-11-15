@@ -1,4 +1,4 @@
-import type { Envelope, JobInfo, MediaInfo, ProjectDoc, ProjectSummary, ServerStatus, Transcript } from '@/lib/shared/types';
+import type { AppSettings, Envelope, Folder, JobInfo, MediaInfo, ProjectDoc, ProjectSummary, ServerStatus, Transcript } from '@/lib/shared/types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -12,8 +12,18 @@ const jsonBody = (body: unknown): RequestInit => ({ method: 'POST', headers: { '
 export const api = {
   status: () => request<ServerStatus>('/api/status'),
   projects: () => request<{ projects: ProjectSummary[] }>('/api/projects').then((r) => r.projects),
-  createProject: (name: string, doc?: ProjectDoc) =>
-    request<{ project: ProjectDoc }>('/api/projects', jsonBody({ name, doc })).then((r) => r.project),
+  createProject: (name: string, doc?: ProjectDoc, folderId?: string | null) =>
+    request<{ project: ProjectDoc }>('/api/projects', jsonBody({ name, doc, folderId })).then((r) => r.project),
+  settings: () => request<{ settings: AppSettings }>('/api/settings').then((r) => r.settings),
+  saveSettings: (patch: Partial<AppSettings>) =>
+    request<{ settings: AppSettings }>('/api/settings', { ...jsonBody(patch), method: 'PUT' }).then((r) => r.settings),
+  folders: () => request<{ folders: Folder[] }>('/api/folders').then((r) => r.folders),
+  createFolder: (name: string, projectIds: string[] = []) =>
+    request<{ folder: Folder }>('/api/folders', jsonBody({ name, projectIds })).then((r) => r.folder),
+  renameFolder: (id: string, name: string) => request<{ folder: Folder }>(`/api/folders/${id}`, { ...jsonBody({ name }), method: 'PATCH' }),
+  deleteFolder: (id: string) => request(`/api/folders/${id}`, { method: 'DELETE' }),
+  /** Puts projects in a folder; `folderId` null takes them out. */
+  moveProjects: (projectIds: string[], folderId: string | null) => request('/api/folders', { ...jsonBody({ projectIds, folderId }), method: 'PUT' }),
   project: (id: string) => request<{ project: ProjectDoc }>(`/api/projects/${id}`).then((r) => r.project),
   saveProject: (doc: ProjectDoc) =>
     request<{ updatedAt: string }>(`/api/projects/${doc.id}`, {

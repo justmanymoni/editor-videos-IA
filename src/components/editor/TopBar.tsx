@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useRef } from 'react';
-import { CircleHelp, Download, FileDown, FileUp, PanelRight, PanelsLeftRight, Redo2, RotateCcw, Undo2 } from 'lucide-react';
+import { CircleHelp, Download, FileDown, FileUp, PanelRight, PanelsLeftRight, Redo2, RotateCcw, Settings, Undo2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { ProjectDoc } from '@/lib/shared/types';
 import { normalizeProjectDoc } from '@/lib/shared/types';
@@ -133,6 +133,9 @@ export function TopBar({ onExport, onHelp, onSave, playerSide, onPlayerSide, onR
           e.target.value = '';
         }}
       />
+      <IconButton label="Ajustes" onClick={() => useEditor.getState().set({ setupOpen: true })}>
+        <Settings size={16} />
+      </IconButton>
       <IconButton label="Atajos de teclado (?)" onClick={onHelp}>
         <CircleHelp size={16} />
       </IconButton>

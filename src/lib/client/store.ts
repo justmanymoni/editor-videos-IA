@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import { produce, type Draft } from 'immer';
-import type { Envelope, MediaInfo, ProjectDoc, ServerStatus, Word } from '@/lib/shared/types';
+import type { AppSettings, Envelope, MediaInfo, ProjectDoc, ServerStatus, Word } from '@/lib/shared/types';
 
 /** One element of the timeline that can be selected. */
 export type SelRef =
@@ -78,8 +78,10 @@ interface EditorState {
   uploads: Upload[];
   toasts: Toast[];
   status: ServerStatus | null;
-  /** Local transcription installer dialog. */
+  /** Settings dialog (transcription model and general settings). */
   setupOpen: boolean;
+  /** General settings of the app, once loaded. */
+  appSettings: AppSettings | null;
   /** Preview videos with the chosen voice/music mix, per media id. */
   mixUrls: Record<string, string>;
   inspectorTab: InspectorTab;
@@ -121,6 +123,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   toasts: [],
   status: null,
   setupOpen: false,
+  appSettings: null,
   mixUrls: {},
   inspectorTab: 'subtitles',
   toolsTab: 'media',

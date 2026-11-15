@@ -18,7 +18,12 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const media = useEditor((s) => s.media);
   const segs = useSegments();
   const pages = useSubtitlePages();
+  const preferred = useEditor((s) => s.appSettings?.exportQuality);
   const [quality, setQuality] = useState<Quality>('normal');
+  // Starts on the quality chosen in the settings; it can be changed for each export.
+  useEffect(() => {
+    if (open && preferred) setQuality(preferred);
+  }, [open, preferred]);
   const [job, setJob] = useState<JobInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ExportFile[]>([]);

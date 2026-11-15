@@ -31,7 +31,8 @@ Next.js 16 + TypeScript + Tailwind 4 · FFmpeg · whisper.cpp local.
 | Texto descargable      | La transcripción queda en el panel derecho: cópiala o descárgala en TXT, o como subtítulos SRT con tiempos.                                                                                                                                                                                                                                                       |
 | Superposiciones        | Fotos, vídeos y pegatinas (PNG con transparencia) encima del vídeo: se mueven y se cambian de tamaño en el propio reproductor. Sugerencias de B-roll según lo que dices.                                                                                                                                                                                          |
 | Exportar               | MP4 H.264 1080×1920 a 30 fps con subtítulos, textos y superposiciones incrustados (FFmpeg + libass), con barra de progreso y cancelación.                                                                                                                                                                                                                         |
-| Proyecto               | Pantalla de inicio con los proyectos en cuadrícula, cada uno con su miniatura. Autoguardado en JSON, importación y exportación, duplicar, renombrar. Deshacer/rehacer.                                                                                                                                                                                            |
+| Proyecto               | Pantalla de inicio limpia: nuevo proyecto, importar, y tus proyectos en cuadrícula con su miniatura. **Carpetas** para ordenarlos (se crean eligiendo los proyectos en la misma lista, o arrastrándolos encima). Autoguardado en JSON, duplicar, renombrar. Deshacer/rehacer.                                                                                     |
+| Ajustes                | Botón arriba a la derecha (inicio y editor): modelo de transcripción, idioma, silencios automáticos, estilo de subtítulos y encuadre de los proyectos nuevos, calidad de exportación y disposición del editor.                                                                                                                                                    |
 | Actualización sola     | Abriendo la app con `Verticut.bat` se descargan e instalan solas las novedades de GitHub. Ver [Actualización automática](#actualización-automática).                                                                                                                                                                                                              |
 
 ## Requisitos
@@ -59,7 +60,7 @@ Después, para abrirla:
 
 La primera vez instala sus componentes (tarda unos minutos); después abre sola <http://localhost:3000> en el navegador. Deja abierta la ventana negra mientras uses la app y ciérrala para apagarla.
 
-En la pantalla de inicio pulsa **Instalar** en la tarjeta «Transcripción local» (ver abajo). Después crea un proyecto y arrastra tus clips.
+La primera vez abre **Ajustes** (arriba a la derecha) y pulsa **Instalar** en «Transcripción local» (ver abajo). Después crea un proyecto y arrastra tus clips.
 
 `.env.local` es opcional: solo hace falta para cambiar rutas o ajustes (copia `.env.example`).
 
@@ -73,7 +74,7 @@ Al abrir la app con `Verticut.bat` (o `./verticut.sh`, o `npm run app`) no hay q
 - Tus proyectos, vídeos y modelos (`storage/`, `recursos/`) no se tocan.
 - Si has modificado a mano algún archivo del programa, no lo pisa: avisa en la ventana y sigue con tu versión. Para guardar tus cambios aparte (`git stash`) y actualizar: `Verticut.bat --descartar`.
 
-En la pantalla de inicio, abajo, se ve la fecha de la versión instalada.
+En Ajustes → Acerca de se ve la fecha de la versión instalada.
 
 | Opción                       | Qué hace                                                           |
 | ---------------------------- | ------------------------------------------------------------------ |
@@ -87,7 +88,7 @@ Si prefieres arrancarla a mano, sin actualizaciones: `npm install` y `npm run de
 
 ## Transcripción de voz a texto (local, sin API)
 
-En la pantalla de inicio (o con la etiqueta «Instalar transcripción» de la barra superior del editor) elige un modelo y pulsa **Instalar**. La app descarga una sola vez:
+En **Ajustes** (o con la etiqueta «Instalar transcripción» de la barra superior del editor) elige un modelo y pulsa **Instalar**. La app descarga una sola vez:
 
 - el motor **whisper.cpp** precompilado para tu sistema (unos 8 MB, desde GitHub), y
 - el **modelo de voz** elegido (desde Hugging Face):
@@ -242,7 +243,7 @@ Cada proyecto se guarda en `storage/projects/<id>.json` un segundo después de c
 }
 ```
 
-Los medios (vídeos, transcripciones y análisis de audio) están en `storage/media/<id>/`. Un JSON importado en otro equipo necesita esos mismos archivos.
+Las carpetas del inicio están en `storage/library.json` y los ajustes generales en `storage/settings.json`. Los medios (vídeos, transcripciones y análisis de audio) están en `storage/media/<id>/`. Un JSON importado en otro equipo necesita esos mismos archivos.
 
 ## Cómo funciona
 
@@ -297,6 +298,7 @@ Dos guiones recorren la app como lo haría una persona y comprueban que cada con
 
 - `scripts/audit/audit-ui.cjs`: pulsa los 225 controles (barra superior, reproductor, línea de tiempo, las pestañas de la izquierda y de la derecha, atajos de teclado, arrastres en el vídeo) y mide lo que tarda cada uno en notarse.
 - `scripts/audit/audit-sound.cjs`: mueve el volumen, la voz y la música y mide el sonido que sale realmente del reproductor.
+- `scripts/audit/audit-home.cjs`: pantalla de inicio (carpetas, selección, arrastrar a una carpeta) y Ajustes.
 
 Necesitan [Playwright](https://playwright.dev) y la app en marcha con un proyecto que tenga un vídeo transcrito, una foto y una superposición:
 
@@ -331,7 +333,7 @@ Todas están documentadas en [`.env.example`](.env.example). Las principales:
 ## Solución de problemas
 
 - **«No se encuentra el ejecutable ffprobe»**: falta FFmpeg. En Windows, `winget install Gyan.FFmpeg`, cierra la app y vuelve a abrirla.
-- **La app no se actualiza**: la ventana de `Verticut.bat` dice por qué (sin conexión, falta Git o has modificado archivos del programa). La fecha de la versión instalada está abajo en la pantalla de inicio.
+- **La app no se actualiza**: la ventana de `Verticut.bat` dice por qué (sin conexión, falta Git o has modificado archivos del programa). La fecha de la versión instalada está en Ajustes → Acerca de.
 - **El texto transcrito no tiene sentido**: el idioma no coincide con el del vídeo. Cámbialo en la pestaña _Transcripción_ (o elige «Detectar») y vuelve a transcribir.
 - **Dictar o grabar no funciona**: el navegador tiene que tener permiso para usar el micrófono; para dictar hace falta además la transcripción local instalada.
 - **«Instalar transcripción» en la barra superior**: falta la transcripción local. Púlsalo e instálala; mientras, puedes editar y quitar silencios igualmente.

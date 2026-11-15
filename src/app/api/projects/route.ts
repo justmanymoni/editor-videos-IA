@@ -8,12 +8,13 @@ export async function GET() {
   return Response.json({ projects: await listProjects() });
 }
 
-/** POST { name, doc? } — creates a project (optionally from an imported JSON). */
+/** POST { name, doc?, folderId? } — creates a project (optionally from an imported JSON, optionally inside a folder). */
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as { name?: string; doc?: ProjectDoc };
+    const body = (await req.json().catch(() => ({}))) as { name?: string; doc?: ProjectDoc; folderId?: string | null };
     if (body.doc && (typeof body.doc !== 'object' || !Array.isArray(body.doc.clips))) throw new Error('El JSON no es un proyecto válido');
-    return Response.json({ project: await createProject(String(body.name ?? '').slice(0, 120), body.doc) });
+    const folderId = typeof body.folderId === 'string' ? body.folderId : null;
+    return Response.json({ project: await createProject(String(body.name ?? '').slice(0, 120), body.doc, folderId) });
   } catch (err) {
     return errorResponse(err, 400);
   }

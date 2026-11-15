@@ -6,8 +6,8 @@ import { useEditor } from '@/lib/client/store';
 import { useAutoSilence, useAutosave, useMediaSync, useMixPreviews, useShortcuts } from '@/lib/client/hooks';
 import { refreshResources, uploadClips } from '@/lib/client/actions';
 import { player, usePlayback } from '@/lib/client/player';
-import { Modal, Toasts } from '@/components/ui';
-import { LocalTranscription } from '@/components/LocalTranscription';
+import { Toasts } from '@/components/ui';
+import { SettingsDialog } from '@/components/SettingsDialog';
 import type { ServerStatus } from '@/lib/shared/types';
 import { TopBar } from './TopBar';
 import { ToolsPanel } from './ToolsPanel';
@@ -107,6 +107,10 @@ export default function Editor({ projectId }: { projectId: string }) {
         s.set({ media: {}, transcripts: {}, envelopes: {}, uploads: [], mixUrls: {} });
         s.upsertMedia(await api.media(project.media));
         s.load(project);
+        api
+          .settings()
+          .then((appSettings) => useEditor.getState().set({ appSettings }))
+          .catch(() => undefined);
         api
           .status()
           .then((status) => useEditor.getState().set({ status }))
@@ -245,9 +249,13 @@ export default function Editor({ projectId }: { projectId: string }) {
       )}
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
       <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <Modal open={setupOpen} onClose={() => useEditor.getState().set({ setupOpen: false })} title="Transcripción de voz a texto">
-        <LocalTranscription status={status} onInstalled={onTranscriberInstalled} />
-      </Modal>
+      <SettingsDialog
+        open={setupOpen}
+        onClose={() => useEditor.getState().set({ setupOpen: false })}
+        status={status}
+        onStatus={onTranscriberInstalled}
+        onSaved={(appSettings) => useEditor.getState().set({ appSettings })}
+      />
       <Toasts />
     </div>
   );

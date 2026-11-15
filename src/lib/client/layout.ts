@@ -19,6 +19,8 @@ export interface Layout {
 
 export const DEFAULT_LAYOUT: Layout = { player: 'center', toolsW: null, sideW: null, playerW: null, timelineH: 300 };
 const KEY = 'verticut.layout';
+/** Fired on `window` when the layout changes, so every user of the hook shows the same. */
+const CHANGED = 'verticut-layout';
 
 export function useLayout() {
   const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
@@ -30,18 +32,25 @@ export function useLayout() {
     } catch {
       // Ignore a corrupt preference.
     }
+    const follow = (e: Event) => setLayout((e as CustomEvent<Layout>).detail);
+    window.addEventListener(CHANGED, follow);
+    return () => window.removeEventListener(CHANGED, follow);
   }, []);
 
   const update = useCallback((patch: Partial<Layout>) => {
-    setLayout((prev) => {
-      const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        // Private mode: the layout just is not remembered.
-      }
-      return next;
-    });
+    let saved = DEFAULT_LAYOUT;
+    try {
+      saved = { ...DEFAULT_LAYOUT, ...(JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Layout> | null) };
+    } catch {
+      // Start from the defaults.
+    }
+    const next = { ...saved, ...patch };
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next));
+    } catch {
+      // Private mode: the layout just is not remembered.
+    }
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: next }));
   }, []);
 
   return [layout, update] as const;

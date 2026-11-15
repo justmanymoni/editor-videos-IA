@@ -5,91 +5,12 @@ import { FileText, Sparkles } from 'lucide-react';
 import type { SubtitleStyle } from '@/lib/shared/types';
 import { DEFAULT_SUBTITLE_STYLE } from '@/lib/shared/types';
 import { cssFamily, getFont } from '@/lib/shared/fonts';
+import { SUBTITLE_PRESETS } from '@/lib/shared/subtitle-presets';
 import { useEditor } from '@/lib/client/store';
 import { downloadText } from '@/lib/client/actions';
 import { Button, ColorField, Row, Section, Segmented, SliderRow, Toggle } from '@/components/ui';
 import { FontPicker } from './FontPicker';
 import { ScriptDialog } from './ScriptDialog';
-
-const PRESETS: { name: string; style: Partial<SubtitleStyle> }[] = [
-  { name: 'Amarillo', style: {} },
-  {
-    name: 'Limpio',
-    style: {
-      fontId: 'montserrat-bold',
-      fontSize: 68,
-      outlineWidth: 4,
-      shadow: 2,
-      uppercase: false,
-      highlight: false,
-      wordsPerPage: 4,
-      maxCharsPerLine: 20,
-    },
-  },
-  {
-    name: 'Clásico',
-    style: {
-      fontId: 'playfair-italic',
-      fontSize: 78,
-      outlineWidth: 3,
-      shadow: 3,
-      uppercase: false,
-      highlight: false,
-      wordsPerPage: 5,
-      maxCharsPerLine: 24,
-    },
-  },
-  { name: 'Titular', style: { fontId: 'anton', fontSize: 110, outlineWidth: 5, shadow: 0, maxCharsPerLine: 14 } },
-  {
-    name: 'Pop',
-    style: { fontId: 'luckiest-guy', fontSize: 96, outlineWidth: 7, shadow: 6, wordsPerPage: 2, activeScale: 1.12, animationIn: 'pop' },
-  },
-  { name: 'Una palabra', style: { fontSize: 120, wordsPerPage: 1, outlineWidth: 8, shadow: 5, animationIn: 'zoom' } },
-  {
-    name: 'Caja',
-    style: {
-      fontId: 'montserrat-bold',
-      fontSize: 66,
-      outlineWidth: 0,
-      shadow: 3,
-      uppercase: false,
-      highlightBox: true,
-      highlightColor: '#FF6B35',
-      boxTextColor: '#111111',
-      dimUpcoming: true,
-      wordsPerPage: 4,
-      maxCharsPerLine: 22,
-      animationIn: 'fade',
-    },
-  },
-  {
-    name: 'Karaoke',
-    style: {
-      fontId: 'poppins-extrabold',
-      fontSize: 78,
-      outlineWidth: 5,
-      shadow: 3,
-      dimUpcoming: true,
-      highlightColor: '#3DFF8B',
-      wordsPerPage: 4,
-      maxCharsPerLine: 18,
-    },
-  },
-  {
-    name: 'Caja amarilla',
-    style: {
-      fontId: 'anton',
-      fontSize: 104,
-      outlineWidth: 5,
-      shadow: 0,
-      highlightBox: true,
-      highlightColor: '#FFE600',
-      boxTextColor: '#000000',
-      wordsPerPage: 2,
-      animationIn: 'pop',
-    },
-  },
-];
 
 /** Look, position and animation of the automatic subtitles. */
 export function SubtitleStylePanel() {
@@ -144,7 +65,7 @@ export function SubtitleStylePanel() {
 
         <Section title="Estilos">
           <div className="grid grid-cols-3 gap-1.5">
-            {PRESETS.map((p) => {
+            {SUBTITLE_PRESETS.map((p) => {
               const merged = { ...DEFAULT_SUBTITLE_STYLE, ...p.style };
               return (
                 <button

@@ -6,6 +6,7 @@ import { writeFile } from 'node:fs/promises';
 import { config, selectTranscriber } from './config';
 import { ffmpeg, ffmpegWithProgress, probe } from './ffmpeg';
 import { errorMessage, jobs } from './jobs';
+import { enqueueFilmstrip } from './filmstrip';
 import { extOf, getMedia, mediaPaths, updateMedia, writeTranscript, type MediaRecord } from './media-store';
 import { transcribeMedia } from './transcribe';
 import { ENVELOPE_RATE, computeEnvelope } from './envelope';
@@ -111,6 +112,7 @@ export function enqueueIngest(id: string) {
       }
 
       await updateMedia(id, { status: 'ready', stage: null, progress: 1, hasThumb, hasEnvelope, hasProxy, error: null });
+      if (rec.kind === 'video') enqueueFilmstrip(id);
       return { hasProxy };
     } catch (err) {
       await updateMedia(id, { status: 'error', stage: null, error: errorMessage(err) });
@@ -152,6 +154,8 @@ export async function enqueueTranscribe(id: string, language: string) {
 
 /** Restarts work that was interrupted (e.g. the server restarted mid-job). */
 export async function resumeInterrupted(rec: MediaRecord) {
+  // Videos added before the timeline showed frames get their filmstrip the first time they are opened.
+  if (rec.kind === 'video' && rec.status === 'ready' && rec.filmstrip === undefined) enqueueFilmstrip(rec.id);
   if (rec.status === 'processing' && !jobs.active('ingest', rec.id)) enqueueIngest(rec.id);
   if ((rec.transcript.status === 'queued' || rec.transcript.status === 'running') && !jobs.active('transcribe', rec.id)) {
     await enqueueTranscribe(rec.id, rec.transcript.language || config.defaultLanguage);

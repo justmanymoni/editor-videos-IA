@@ -65,6 +65,7 @@ export const api = {
 export const mediaUrl = {
   preview: (m: MediaInfo) => `/api/media/${m.id}/file?v=preview&p=${m.hasProxy ? 1 : 0}`,
   thumb: (m: MediaInfo) => (m.hasThumb ? `/api/media/${m.id}/thumb` : null),
+  filmstrip: (m: MediaInfo) => (m.filmstrip ? `/api/media/${m.id}/filmstrip` : null),
 };
 
 /** Uploads a file as the raw request body, reporting progress (0..1). */

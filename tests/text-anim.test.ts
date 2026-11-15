@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TEXT_ANIMATIONS, textAnimTimes, textMotion, textPose } from '../src/lib/shared/text-anim';
 import { TEXT_PRESETS } from '../src/lib/shared/text-presets';
 import { SUBTITLE_FONTS } from '../src/lib/shared/fonts';
-import { assignLanes } from '../src/lib/shared/lanes';
+import { byLayer, layoutLanes, moveToRow } from '../src/lib/shared/lanes';
 
 /** Evaluates an FFmpeg expression of `t` with the handful of functions the export uses. */
 function ffmpegExpr(expr: string | null, t: number, fallback: number): number {
@@ -82,24 +82,58 @@ describe('text presets', () => {
 });
 
 describe('layers of a track', () => {
-  const item = (id: string, start: number, duration: number) => ({ id, start, duration });
+  const item = (id: string, start: number, duration: number, lane?: number) => ({ id, start, duration, lane });
+  const rows = (items: ReturnType<typeof item>[], options?: Parameters<typeof layoutLanes>[1]) => Object.fromEntries(layoutLanes(items, options).of);
 
   it('keeps items that do not overlap on one row', () => {
-    const lanes = assignLanes([item('a', 0, 1), item('b', 1, 1), item('c', 2.5, 1)]);
+    const lanes = layoutLanes([item('a', 0, 1), item('b', 1, 1), item('c', 2.5, 1)]);
     expect(lanes.count).toBe(1);
     expect([...lanes.of.values()]).toEqual([0, 0, 0]);
   });
 
-  it('puts overlapping items on separate rows and reuses a row when it is free', () => {
-    const lanes = assignLanes([item('title', 0, 4), item('label', 1, 2), item('box', 1.5, 1), item('later', 3, 1)]);
+  it('puts overlapping items of a lane on neighbouring rows and reuses a row when it is free', () => {
+    const lanes = layoutLanes([item('title', 0, 4), item('label', 1, 2), item('box', 1.5, 1), item('later', 3, 1)]);
     expect(lanes.count).toBe(3);
-    expect(lanes.of.get('title')).toBe(0);
-    expect(lanes.of.get('label')).toBe(1);
-    expect(lanes.of.get('box')).toBe(2);
-    expect(lanes.of.get('later')).toBe(1);
+    expect(Object.fromEntries(lanes.of)).toEqual({ title: 0, label: 1, box: 2, later: 1 });
   });
 
   it('always has one row, even when empty', () => {
-    expect(assignLanes([]).count).toBe(1);
+    expect(layoutLanes([]).count).toBe(1);
+  });
+
+  it('keeps a higher lane above a lower one, whatever their times', () => {
+    expect(rows([item('top', 0, 1, 5), item('bottom', 3, 1, 2)])).toEqual({ bottom: 0, top: 1 });
+    // Two overlapping items on the lower lane push the upper lane further up.
+    expect(rows([item('a', 0, 2, 0), item('b', 1, 2, 0), item('c', 0, 1, 1)])).toEqual({ a: 0, b: 1, c: 2 });
+  });
+
+  it('reserves the first row of the text track for the subtitles', () => {
+    const options = { defaultLane: 1, reserved: true };
+    expect(rows([item('title', 0, 2)], options)).toEqual({ title: 1 });
+    expect(layoutLanes([item('title', 0, 2)], options).count).toBe(2);
+    // A text the user dragged down shares the subtitles' row.
+    expect(rows([item('title', 0, 2), item('note', 0, 2, 0)], options)).toEqual({ note: 0, title: 1 });
+    expect(layoutLanes([], options).count).toBe(1);
+  });
+
+  it('draws the lowest layer first', () => {
+    const items = [item('front', 0, 5, 2), item('back', 0, 5, 0), item('middle', 1, 5, 1)];
+    expect(byLayer(items).map((x) => x.id)).toEqual(['back', 'middle', 'front']);
+  });
+
+  it('moves an item to another layer by dragging', () => {
+    const items = [item('a', 0, 4, 0), item('b', 0, 4, 1), item('c', 6, 2, 0)];
+    const apply = (id: string, row: number) => {
+      const lanes = moveToRow(items, id, row);
+      return rows(items.map((x) => ({ ...x, lane: lanes.get(x.id) })));
+    };
+    // Above everything: a new top layer.
+    expect(apply('a', 2)).toEqual({ c: 0, b: 1, a: 2 });
+    // Onto a row with room at that time: it joins the row.
+    expect(apply('c', 1)).toEqual({ a: 0, b: 1, c: 1 });
+    // Onto a row that is taken at that time: a new row opens above (it was moved up)…
+    expect(apply('a', 1)).toEqual({ c: 0, b: 1, a: 2 });
+    // …or below (it was moved down): the row it landed on moves up as a whole.
+    expect(apply('b', 0)).toEqual({ b: 0, a: 1, c: 1 });
   });
 });

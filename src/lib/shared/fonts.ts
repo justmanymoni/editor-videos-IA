@@ -448,3 +448,6 @@ export function fontVariant(id: string, change: { bold?: boolean; italic?: boole
   const match = family.filter((f) => isBoldFont(f) === bold && !!f.italic === italic).sort((a, b) => order(a) - order(b))[0];
   return match && match.id !== id ? match.id : null;
 }
+
+/** Fonts by name, as a font menu lists them (families end up together: Montserrat, Montserrat Black, Montserrat Bold…). */
+export const fontsByName = (fonts: SubtitleFont[]) => [...fonts].sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));

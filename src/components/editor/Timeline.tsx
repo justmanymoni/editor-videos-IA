@@ -5,7 +5,8 @@ import { ArrowLeftToLine, ArrowRightToLine, Captions, Film, Layers, Maximize2, M
 import type { AudioItem, BrollItem, Envelope, MediaInfo, TextItem } from '@/lib/shared/types';
 import { FRAME, clamp } from '@/lib/shared/ranges';
 import { sequenceDuration, type Segment } from '@/lib/shared/timeline';
-import { assignLanes, type Lanes } from '@/lib/shared/lanes';
+import { filmstripRows, frameAt } from '@/lib/shared/filmstrip';
+import { AUDIO_LANES, OVERLAY_LANES, TEXT_LANES, layoutLanes, moveToRow, type LaneOptions, type Lanes } from '@/lib/shared/lanes';
 import type { SubPage } from '@/lib/shared/subtitles';
 import { mediaUrl } from '@/lib/client/api';
 import { refKey, selRefs, selectionOf, toggleRef, useEditor, type SelRef, type Selection } from '@/lib/client/store';
@@ -24,14 +25,21 @@ import {
   trimAtPlayhead,
   trimSegment,
   updateItem,
+  updateItems,
   type ItemKind,
 } from '@/lib/client/actions';
 import { IconButton, Slider } from '@/components/ui';
 import { MEDIA_DRAG_TYPE } from './ToolsPanel';
 
-const H = { toolbar: 40, ruler: 24, text: 30, subs: 28, broll: 44, main: 62, audio: 40 };
-type TrackId = 'text' | 'subs' | 'broll' | 'main' | 'audio';
-const TRACK_ORDER: TrackId[] = ['text', 'subs', 'broll', 'main', 'audio'];
+const H = { toolbar: 40, ruler: 24, text: 30, broll: 44, main: 62, audio: 40 };
+type TrackId = 'text' | 'broll' | 'main' | 'audio';
+const TRACK_ORDER: TrackId[] = ['text', 'broll', 'main', 'audio'];
+/**
+ * How the items of each track are stacked. The first row of the text track is
+ * the subtitles' row; texts start one row above it unless they are dragged
+ * down. Upper rows of text and overlays are drawn over lower ones.
+ */
+const LANE_OPTIONS: Record<ItemKind, LaneOptions> = { text: TEXT_LANES, broll: OVERLAY_LANES, audio: AUDIO_LANES };
 const EDGE = 7;
 const MIN_PPS = 4;
 const MAX_PPS = 400;
@@ -43,7 +51,19 @@ type Drag =
   | { kind: 'scrub' }
   | { kind: 'seg-move'; seg: Segment; x0: number; dx: number; moved: boolean; t0: number }
   | { kind: 'seg-trim'; seg: Segment; edge: 'start' | 'end'; x0: number; dx: number }
-  | { kind: 'item-move'; track: ItemKind; id: string; x0: number; dx: number; moved: boolean; start: number }
+  /** `row` is the layer the item is over while it is dragged up or down (`fromRow` is where it was). */
+  | {
+      kind: 'item-move';
+      track: ItemKind;
+      id: string;
+      x0: number;
+      y0: number;
+      dx: number;
+      moved: boolean;
+      start: number;
+      fromRow: number;
+      row: number;
+    }
   | { kind: 'item-trim'; track: ItemKind; id: string; edge: 'start' | 'end'; x0: number; dx: number }
   /** Selection box drawn on an empty part of the tracks (content pixels). `base` is what was selected before, when adding. */
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; moved: boolean; base: SelRef[] }
@@ -112,9 +132,22 @@ function Playhead({ pps, scroller }: { pps: number; scroller: React.RefObject<HT
   );
 }
 
-function TrackLabel({ icon: Icon, label, height, layers = 1 }: { icon: typeof Film; label: string; height: number; layers?: number }) {
+function TrackLabel({
+  icon: Icon,
+  label,
+  height,
+  layers = 1,
+  plain,
+}: {
+  icon: typeof Film;
+  label: string;
+  height: number;
+  layers?: number;
+  /** No line underneath: the next label belongs to the same track. */
+  plain?: boolean;
+}) {
   return (
-    <div className="flex items-center gap-1.5 border-b border-line px-3 text-[11px] font-medium text-muted" style={{ height }}>
+    <div className={clsx('flex items-center gap-1.5 px-3 text-[11px] font-medium text-muted', !plain && 'border-b border-line')} style={{ height }}>
       <Icon size={12} className="shrink-0" /> <span className="truncate">{label}</span>
       {layers > 1 && (
         <span className="ml-auto shrink-0 rounded bg-panel-3 px-1 text-[10px] text-faint" title={`${layers} capas a la vez`}>
@@ -162,15 +195,28 @@ export function Timeline({ height }: { height: number }) {
   const fitted = useRef(false);
   // Tracks grow by one row for every extra layer of items that overlap in time.
   const lanes = useMemo<Record<ItemKind, Lanes>>(
-    () => ({ text: assignLanes(doc.texts), broll: assignLanes(doc.broll), audio: assignLanes(doc.audio) }),
+    () => ({
+      text: layoutLanes(doc.texts, LANE_OPTIONS.text),
+      broll: layoutLanes(doc.broll, LANE_OPTIONS.broll),
+      audio: layoutLanes(doc.audio, LANE_OPTIONS.audio),
+    }),
     [doc.texts, doc.broll, doc.audio],
   );
+  const rowsOf = (track: ItemKind) => lanes[track].count;
+  /**
+   * Top of a row inside its track. Text and overlays stack upwards (row 0 at
+   * the bottom); audio stacks downwards. The row past the last one (a new
+   * layer about to be made) is drawn on the last one, so nothing jumps while dragging.
+   */
+  const rowY = (track: ItemKind, row: number) => {
+    const shown = Math.min(row, rowsOf(track) - 1);
+    return (track === 'audio' ? shown : rowsOf(track) - 1 - shown) * H[track];
+  };
   const rowHeight: Record<TrackId, number> = {
-    text: H.text * lanes.text.count,
-    subs: H.subs,
-    broll: H.broll * lanes.broll.count,
+    text: H.text * rowsOf('text'),
+    broll: H.broll * rowsOf('broll'),
     main: H.main,
-    audio: H.audio * lanes.audio.count,
+    audio: H.audio * rowsOf('audio'),
   };
   const rowTop = {} as Record<TrackId, number>;
   let tracksHeight = H.ruler;
@@ -178,9 +224,32 @@ export function Timeline({ height }: { height: number }) {
     rowTop[id] = tracksHeight;
     tracksHeight += rowHeight[id];
   }
-  const live = useRef({ pps, segs, doc, media, duration, pages, lanes, rowTop, rowHeight });
-  live.current = { pps, segs, doc, media, duration, pages, lanes, rowTop, rowHeight };
+  const live = useRef({ pps, segs, doc, media, duration, pages, lanes, rowTop, rowY });
+  live.current = { pps, segs, doc, media, duration, pages, lanes, rowTop, rowY };
   const selectedKeys = useMemo(() => new Set(selRefs(selection).map(refKey)), [selection]);
+
+  // Visible part of the timeline (the filmstrips only draw what can be seen).
+  const [view, setView] = useState({ left: 0, width: 2400 });
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    let raf = 0;
+    const read = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() =>
+        setView((v) => (v.left === el.scrollLeft && v.width === el.clientWidth ? v : { left: el.scrollLeft, width: el.clientWidth })),
+      );
+    };
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('scroll', read);
+      ro.disconnect();
+    };
+  }, []);
 
   const fit = useCallback(() => {
     const el = scroller.current;
@@ -241,23 +310,23 @@ export function Timeline({ height }: { height: number }) {
 
   /** Every element touched by a box drawn on the tracks. */
   const elementsIn = (ax: number, ay: number, bx: number, by: number): SelRef[] => {
-    const { pps: p, segs: sg, doc: d, pages: pg, lanes: ln, rowTop: tops, rowHeight: heights } = live.current;
+    const { pps: p, segs: sg, doc: d, pages: pg, lanes: ln, rowTop: tops, rowY: yOf } = live.current;
     const from = Math.min(ax, bx) / p;
     const to = Math.max(ax, bx) / p;
     const top = Math.min(ay, by);
     const bottom = Math.max(ay, by);
-    const row = (k: TrackId) => top < tops[k] + heights[k] && bottom > tops[k];
+    const band = (y: number, height: number) => top < y + height && bottom > y;
     /** The row of one item inside a track with several layers. */
-    const lane = (k: ItemKind, id: string) => {
-      const y = tops[k] + (ln[k].of.get(id) ?? 0) * H[k];
-      return top < y + H[k] && bottom > y;
-    };
+    const lane = (k: ItemKind, id: string) => band(tops[k] + yOf(k, ln[k].of.get(id) ?? 0), H[k]);
     const over = (start: number, end: number) => start < to && end > from;
     const out: SelRef[] = [];
     for (const x of d.texts) if (over(x.start, x.start + x.duration) && lane('text', x.id)) out.push({ kind: 'text', id: x.id });
-    if (row('subs') && d.subtitles.enabled) for (const x of pg) if (over(x.start, x.end)) out.push({ kind: 'subtitle', page: x.index });
+    // The subtitles live on the first row of the text track.
+    if (d.subtitles.enabled && band(tops.text + yOf('text', 0), H.text))
+      for (const x of pg) if (over(x.start, x.end)) out.push({ kind: 'subtitle', page: x.index });
     for (const x of d.broll) if (over(x.start, x.start + x.duration) && lane('broll', x.id)) out.push({ kind: 'broll', id: x.id });
-    if (row('main')) for (const x of sg) if (over(x.tlStart, x.tlEnd)) out.push({ kind: 'segment', clipId: x.clipId, rangeIndex: x.rangeIndex });
+    if (band(tops.main, H.main))
+      for (const x of sg) if (over(x.tlStart, x.tlEnd)) out.push({ kind: 'segment', clipId: x.clipId, rangeIndex: x.rangeIndex });
     for (const x of d.audio) if (over(x.start, x.start + x.duration) && lane('audio', x.id)) out.push({ kind: 'audio', id: x.id });
     return out;
   };
@@ -297,7 +366,18 @@ export function Timeline({ height }: { height: number }) {
       if (d.moved) moveItems(d.refs, d.dt);
       else useEditor.getState().setSelection(d.anchor);
     } else if (d.kind === 'item-move' && d.moved) {
-      updateItem(d.track, d.id, { start: Math.max(0, d.start) });
+      const start = Math.max(0, d.start);
+      if (d.row === d.fromRow) updateItem(d.track, d.id, { start });
+      else {
+        // Dropped on another layer: the rows are renumbered so the item lands exactly there.
+        const list = itemsOf(d.track).map((x) => (x.id === d.id ? { ...x, start } : x));
+        const next = moveToRow(list, d.id, d.row, LANE_OPTIONS[d.track]);
+        updateItems(
+          list
+            .filter((x) => x.id === d.id || next.get(x.id) !== x.lane)
+            .map((x) => ({ kind: d.track, id: x.id, patch: x.id === d.id ? { start, lane: next.get(x.id) } : { lane: next.get(x.id) } })),
+        );
+      }
     } else if (d.kind === 'item-trim' && Math.abs(d.dx) > 1) {
       const item = itemsOf(d.track).find((x) => x.id === d.id);
       if (item) updateItem(d.track, d.id, trimItem(item, 'mediaId' in item ? md[item.mediaId] : undefined, d.edge, dt));
@@ -333,7 +413,11 @@ export function Timeline({ height }: { height: number }) {
         const item = itemsOf(d.track).find((x) => x.id === d.id);
         if (!item) return;
         const start = snapItem(Math.max(0, item.start + dx / live.current.pps), item.duration, snapPoints(new Set([d.id])));
-        setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 3, start: Math.max(0, start) });
+        // Up or down by whole rows. Above the top row of text and overlays (below the last one of audio) is a new layer.
+        const dy = e.clientY - d.y0;
+        const steps = Math.round(dy / H[d.track]) * (d.track === 'audio' ? 1 : -1);
+        const row = clamp(d.fromRow + steps, 0, live.current.lanes[d.track].count);
+        setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 3 || row !== d.fromRow, start: Math.max(0, start), row });
       } else if (d.kind === 'seg-move') setDrag({ ...d, dx, moved: d.moved || Math.abs(dx) > 4 });
       else setDrag({ ...d, dx });
     };
@@ -379,7 +463,10 @@ export function Timeline({ height }: { height: number }) {
     select(ref);
     const edge = edgeOf(e, e.currentTarget as HTMLElement);
     if (edge) setDrag({ kind: 'item-trim', track, id: item.id, edge, x0: e.clientX, dx: 0 });
-    else setDrag({ kind: 'item-move', track, id: item.id, x0: e.clientX, dx: 0, moved: false, start: item.start });
+    else {
+      const row = live.current.lanes[track].of.get(item.id) ?? 0;
+      setDrag({ kind: 'item-move', track, id: item.id, x0: e.clientX, y0: e.clientY, dx: 0, moved: false, start: item.start, fromRow: row, row });
+    }
   };
 
   const onSubDown = (e: React.PointerEvent, page: SubPage) => {
@@ -455,29 +542,51 @@ export function Timeline({ height }: { height: number }) {
 
   const moveMarker =
     drag?.kind === 'seg-move' && drag.moved ? nearest(clipBoundaries, (drag.seg.tlStart + drag.seg.tlEnd) / 2 + drag.dx / pps) : null;
-  const itemTrack = (track: ItemKind, items: Item[], hint: string, extra?: object) => (
+  const itemTrack = (track: ItemKind, items: Item[], hint: string, extra?: object, under?: React.ReactNode) => (
     <div
       data-track={track}
+      data-rows={lanes[track].count}
       className={clsx('relative border-b border-line', dropTrack === track && 'bg-accent/10')}
       style={{ height: rowHeight[track] }}
       onPointerDown={onEmptyDown}
       {...extra}
     >
-      {items.map((item) => (
-        <ItemBlock
-          key={item.id}
-          item={item}
-          track={track}
-          media={'mediaId' in item ? media[item.mediaId] : undefined}
-          env={track === 'audio' && 'mediaId' in item ? envelopes[item.mediaId] : undefined}
-          pps={pps}
-          drag={drag}
-          lane={lanes[track].of.get(item.id) ?? 0}
-          selected={selectedKeys.has(`${track}:${item.id}`)}
-          onDown={onItemDown}
-        />
+      {/* Faint lines between layers, and the row an item is being dragged to. */}
+      {Array.from({ length: rowsOf(track) - 1 }, (_, i) => (
+        <div key={i} className="pointer-events-none absolute inset-x-0 border-t border-line/60" style={{ top: (i + 1) * H[track] }} />
       ))}
-      {!items.length && <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[11px] text-faint">{hint}</span>}
+      {drag?.kind === 'item-move' &&
+        drag.track === track &&
+        drag.moved &&
+        drag.row !== drag.fromRow &&
+        (drag.row >= rowsOf(track) ? (
+          // Past the last row: a line where the new layer will appear.
+          <div
+            data-new-layer
+            className={clsx('pointer-events-none absolute inset-x-0 z-20 h-[3px] bg-accent', track === 'audio' ? 'bottom-0' : 'top-0')}
+          />
+        ) : (
+          <div className="pointer-events-none absolute inset-x-0 bg-accent/10" style={{ top: rowY(track, drag.row), height: H[track] }} />
+        ))}
+      {under}
+      {items.map((item) => {
+        const dragged = drag?.kind === 'item-move' && drag.id === item.id && drag.moved;
+        return (
+          <ItemBlock
+            key={item.id}
+            item={item}
+            track={track}
+            media={'mediaId' in item ? media[item.mediaId] : undefined}
+            env={track === 'audio' && 'mediaId' in item ? envelopes[item.mediaId] : undefined}
+            pps={pps}
+            drag={drag}
+            top={rowY(track, dragged ? drag.row : (lanes[track].of.get(item.id) ?? 0))}
+            selected={selectedKeys.has(`${track}:${item.id}`)}
+            onDown={onItemDown}
+          />
+        );
+      })}
+      {!items.length && !under && <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[11px] text-faint">{hint}</span>}
     </div>
   );
 
@@ -518,8 +627,9 @@ export function Timeline({ height }: { height: number }) {
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-32 shrink-0 border-r border-line" style={{ minHeight: tracksHeight }}>
           <div style={{ height: H.ruler }} className="border-b border-line" />
-          <TrackLabel icon={Type} label="Texto" height={rowHeight.text} layers={lanes.text.count} />
-          <TrackLabel icon={Captions} label="Subtítulos" height={rowHeight.subs} />
+          {/* The text track: titles on the upper rows, the subtitles' row at the bottom. */}
+          {rowsOf('text') > 1 && <TrackLabel icon={Type} label="Texto" height={H.text * (rowsOf('text') - 1)} layers={lanes.text.count - 1} plain />}
+          <TrackLabel icon={Captions} label="Subtítulos" height={H.text} />
           <TrackLabel icon={Layers} label="Superposición" height={rowHeight.broll} layers={lanes.broll.count} />
           <TrackLabel icon={Film} label="Vídeo" height={rowHeight.main} />
           <TrackLabel icon={Music} label="Audio" height={rowHeight.audio} layers={lanes.audio.count} />
@@ -534,12 +644,24 @@ export function Timeline({ height }: { height: number }) {
               ))}
             </div>
 
-            {itemTrack('text', doc.texts, 'Añade texto desde la pestaña Texto')}
-
-            <div data-track="subs" className="relative border-b border-line" style={{ height: H.subs }} onPointerDown={onEmptyDown}>
-              {doc.subtitles.enabled &&
-                pages.map((p) => <SubBlock key={p.index} page={p} pps={pps} selected={selectedKeys.has(`subtitle:${p.index}`)} onDown={onSubDown} />)}
-            </div>
+            {itemTrack(
+              'text',
+              doc.texts,
+              '',
+              undefined,
+              // The subtitles' row: the automatic subtitles, and any text dragged down to share the line.
+              <div data-track="subs" className="absolute inset-x-0" style={{ top: rowY('text', 0), height: H.text }}>
+                {doc.subtitles.enabled ? (
+                  pages.map((p) => (
+                    <SubBlock key={p.index} page={p} pps={pps} selected={selectedKeys.has(`subtitle:${p.index}`)} onDown={onSubDown} />
+                  ))
+                ) : (
+                  <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[11px] text-faint">
+                    Pulsa G para poner subtítulos automáticos · los textos se añaden desde la pestaña Texto
+                  </span>
+                )}
+              </div>,
+            )}
 
             {itemTrack('broll', doc.broll, 'Arrastra aquí vídeos o fotos para superponerlos', dropHandlers('broll'))}
 
@@ -591,24 +713,41 @@ export function Timeline({ height }: { height: number }) {
                     style={{ left, width: Math.max(2, w - 1), background: `hsl(${hue} 38% 24%)` }}
                     title={m?.name}
                   >
-                    {thumb && w > 48 && (
-                      <img
-                        src={thumb}
-                        alt=""
-                        draggable={false}
-                        className="pointer-events-none absolute top-0 left-0 h-full w-9 object-cover opacity-80"
+                    {/* The frames of the clip all along it; a photo is simply repeated. */}
+                    {m?.filmstrip ? (
+                      <FilmstripTiles
+                        media={m}
+                        from={from}
+                        to={to}
+                        width={Math.max(2, w - 1)}
+                        height={H.main - 14}
+                        viewFrom={Math.floor((view.left - left - 400) / 200) * 200}
+                        viewTo={Math.ceil((view.left + view.width - left + 400) / 200) * 200}
                       />
+                    ) : (
+                      thumb && (
+                        <div
+                          className="pointer-events-none absolute inset-0"
+                          style={{
+                            backgroundImage: `url(${thumb})`,
+                            backgroundSize: 'auto 100%',
+                            backgroundRepeat: m?.kind === 'image' ? 'repeat-x' : 'no-repeat',
+                          }}
+                        />
+                      )
                     )}
+                    {/* The sound, on a dark band under the frames. */}
+                    {m?.hasAudio && <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[16px] bg-black/60" />}
                     <Waveform
                       env={envelopes[seg.mediaId]}
                       from={from}
                       to={to}
                       width={Math.max(2, w - 1)}
-                      height={30}
-                      color={`hsl(${hue} 60% 62% / 0.55)`}
+                      height={16}
+                      color="rgb(255 255 255 / 0.75)"
                     />
-                    {w > 60 && (
-                      <span className="pointer-events-none absolute top-1 left-10 truncate pr-2 text-[10px] font-medium text-white/85">
+                    {w > 110 && (
+                      <span className="pointer-events-none absolute top-0.5 left-1 max-w-[70%] truncate rounded bg-black/55 px-1 text-[10px] font-medium text-white/90">
                         {m?.name}
                       </span>
                     )}
@@ -665,10 +804,68 @@ export function Timeline({ height }: { height: number }) {
 }
 
 const ITEM_STYLE: Record<ItemKind, string> = {
-  text: 'bg-[#7c3aed]/45',
+  // Texts and subtitles are flat orange with white letters, as in CapCut.
+  text: 'bg-[#B8501F]',
   broll: 'bg-track-broll/60',
   audio: 'bg-track-audio/45',
 };
+
+/**
+ * The frames of a video drawn along a clip. Every tile shows the frame of
+ * the moment it covers; only the tiles near the visible part of the timeline
+ * are created, so a long clip zoomed in stays light.
+ */
+const FilmstripTiles = memo(function FilmstripTiles({
+  media,
+  from,
+  to,
+  width,
+  height,
+  viewFrom,
+  viewTo,
+}: {
+  media: MediaInfo;
+  /** Source seconds shown by the clip. */
+  from: number;
+  to: number;
+  width: number;
+  height: number;
+  /** Visible range, in pixels from the left edge of the clip. */
+  viewFrom: number;
+  viewTo: number;
+}) {
+  const strip = media.filmstrip;
+  const url = mediaUrl.filmstrip(media);
+  if (!strip || !url) return null;
+  const tile = Math.max(8, Math.round((height * strip.tileW) / strip.tileH));
+  const rows = filmstripRows(strip);
+  const first = Math.max(0, Math.floor(viewFrom / tile));
+  const last = Math.min(Math.ceil(width / tile), Math.ceil(viewTo / tile));
+  const tiles = [];
+  for (let i = first; i < last; i++) {
+    const t = from + Math.min(1, ((i + 0.5) * tile) / width) * (to - from);
+    const frame = frameAt(strip, t);
+    tiles.push(
+      <div
+        key={i}
+        className="absolute top-0"
+        style={{
+          left: i * tile,
+          width: tile,
+          height,
+          backgroundImage: `url(${url})`,
+          backgroundSize: `${strip.cols * tile}px ${rows * height}px`,
+          backgroundPosition: `-${(frame % strip.cols) * tile}px -${Math.floor(frame / strip.cols) * height}px`,
+        }}
+      />,
+    );
+  }
+  return (
+    <div data-filmstrip className="pointer-events-none absolute inset-0 overflow-hidden">
+      {tiles}
+    </div>
+  );
+});
 
 function ItemBlock({
   item,
@@ -677,7 +874,7 @@ function ItemBlock({
   env,
   pps,
   drag,
-  lane,
+  top,
   selected,
   onDown,
 }: {
@@ -687,8 +884,8 @@ function ItemBlock({
   env?: Envelope;
   pps: number;
   drag: Drag | null;
-  /** Row inside the track, when several items overlap in time. */
-  lane: number;
+  /** Top of its row inside the track. */
+  top: number;
   selected: boolean;
   onDown: (e: React.PointerEvent, track: ItemKind, item: Item) => void;
 }) {
@@ -718,9 +915,9 @@ function ItemBlock({
       className={clsx(
         'absolute overflow-hidden rounded-md border',
         ITEM_STYLE[track],
-        selected ? 'z-10 border-accent ring-1 ring-accent' : 'border-black/40',
+        selected ? (track === 'text' ? 'z-10 border-white ring-1 ring-white' : 'z-10 border-accent ring-1 ring-accent') : 'border-black/40',
       )}
-      style={{ left: start * pps, width: w, top: lane * H[track] + 4, height: H[track] - 8 }}
+      style={{ left: start * pps, width: w, top: top + 4, height: H[track] - 8 }}
       title={label}
     >
       {track === 'broll' && thumb && (
@@ -755,7 +952,8 @@ function SubBlock({
       onPointerDown={(e) => onDown(e, page)}
       className={clsx(
         'absolute top-1 bottom-1 cursor-pointer overflow-hidden rounded border px-1 text-[10px] leading-[18px] font-semibold whitespace-nowrap',
-        selected ? 'z-10 border-accent bg-accent/30 text-fg' : 'border-accent/25 bg-accent/10 text-accent/90 hover:bg-accent/20',
+        // Flat orange with white letters, as in CapCut.
+        selected ? 'z-10 border-white bg-[#F07A3A] text-white ring-1 ring-white' : 'border-black/30 bg-[#E0662D] text-white hover:bg-[#EA7035]',
       )}
       style={{ left: page.start * pps, width: Math.max(3, (page.end - page.start) * pps - 1) }}
       title={page.words.map((w) => w.text).join(' ')}

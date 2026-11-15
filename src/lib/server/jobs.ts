@@ -28,6 +28,7 @@ const limits = (): Record<JobType, number> => ({
   setup: 1,
   separate: 1,
   mix: 2,
+  filmstrip: 1,
 });
 
 const KEEP_FINISHED_MS = 60 * 60 * 1000;

@@ -32,6 +32,8 @@ export function useMediaSync() {
           return (
             !m ||
             m.status === 'processing' ||
+            // The frames for the timeline are made right after a video is ready.
+            (m.kind === 'video' && m.status === 'ready' && m.filmstrip === undefined) ||
             m.transcript.status === 'queued' ||
             m.transcript.status === 'running' ||
             sep === 'queued' ||

@@ -15,28 +15,12 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
   // ---- known starting point
   const original = (await (await fetch(`${BASE}/api/projects/${id}`)).json()).project;
   const start = JSON.parse(JSON.stringify(original));
+  // prettier-ignore
   const T = {
-    id: 'auditText1',
-    text: 'Texto de prueba',
-    start: 2,
-    duration: 4,
-    x: 0.5,
-    y: 0.12,
-    scale: 1,
-    rotation: 0,
-    fontId: 'montserrat-black',
-    fontSize: 96,
-    color: '#FFFFFF',
-    outlineColor: '#000000',
-    outlineWidth: 6,
-    shadow: 4,
-    curve: 'none',
-    curveAmount: 50,
-    bgColor: '',
-    bgRadius: 0.3,
-    bgPadding: 0.3,
-    animIn: 'none',
-    animOut: 'none',
+    id: 'auditText1', text: 'Texto de prueba', start: 2, duration: 4, x: 0.5, y: 0.12, scale: 1, rotation: 0,
+    fontId: 'montserrat-bold', fontSize: 96, color: '#FFFFFF', outlineColor: '#000000', outlineWidth: 6, letterSpacing: 0,
+    shadowOn: true, shadow: 6, shadowColor: '#000000', shadowOpacity: 0.7, shadowBlur: 8, shadowAngle: -45,
+    curve: 'none', curveAmount: 50, bgColor: '', bgRadius: 0.3, bgPadding: 0.3, animIn: 'none', animOut: 'none',
   };
   start.texts = [T];
   start.broll = start.broll.slice(0, 1).map((b) => ({ ...b, start: 2, duration: 4, x: 0.3, y: 0.42, scale: 0.3 }));
@@ -50,28 +34,12 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
     .filter((t) => first.start + t + 1 < first.end)
     .map((t) => ({ start: first.start + t, end: first.start + t + 0.5, reason: 'manual' }));
   start.settings = { ...start.settings, fitMode: 'cover', mainVolume: 1, language: 'es' };
+  // prettier-ignore
   start.subtitles = {
-    enabled: true,
-    fontId: 'montserrat-black',
-    fontSize: 86,
-    textColor: '#FFFFFF',
-    highlightColor: '#FFE600',
-    outlineColor: '#000000',
-    outlineWidth: 6,
-    shadow: 4,
-    positionX: 50,
-    positionY: 72,
-    highlight: true,
-    highlightBox: false,
-    boxTextColor: '#111111',
-    dimUpcoming: false,
-    animationIn: 'none',
-    animationOut: 'none',
-    uppercase: true,
-    stripPunctuation: true,
-    wordsPerPage: 3,
-    maxCharsPerLine: 16,
-    activeScale: 1,
+    enabled: true, fontId: 'montserrat-bold', fontSize: 86, textColor: '#FFFFFF', highlightColor: '#FFE600', outlineColor: '#000000', outlineWidth: 6,
+    letterSpacing: 0, underline: false, shadowOn: true, shadow: 6, shadowColor: '#000000', shadowOpacity: 0.7, shadowBlur: 8, shadowAngle: -45,
+    positionX: 50, positionY: 72, highlight: true, highlightBox: false, boxTextColor: '#111111', dimUpcoming: false, animationIn: 'none', animationOut: 'none',
+    textCase: 'upper', stripPunctuation: true, wordsPerPage: 3, maxCharsPerLine: 16, activeScale: 1,
   };
   await fetch(`${BASE}/api/projects/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(start) });
 
@@ -119,6 +87,8 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
           cs.webkitTextStrokeWidth,
           cs.webkitTextStrokeColor,
           cs.textShadow,
+          cs.letterSpacing,
+          cs.textDecorationLine,
           el.style.left,
           el.style.top,
           [...el.querySelectorAll('[data-w]')]
@@ -191,6 +161,10 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
     const rowOf = (panel, label) => panel.locator('div.flex.min-h-7', { has: page.locator(`span[title="${label}"]`) }).first();
     const setColor = (panel, label, value) => rowOf(panel, label).locator('input[type=color]').fill(value);
     const toggle = (panel, label) => panel.getByRole('switch', { name: label }).click();
+    /** A section that is switched on with a checkbox (Trazo, Sombra, Fondo…). */
+    const sectionOf = (panel, title) => panel.locator('section', { has: page.getByRole('checkbox', { name: title, exact: true }) }).first();
+    const checkbox = (panel, title) => panel.getByRole('checkbox', { name: title, exact: true }).click();
+    const mini = (panel, label) => panel.getByRole('button', { name: label, exact: true }).click();
     const button = (panel, name) => panel.getByRole('button', { name, exact: true }).first().click();
     const tab = (name) => page.click(`[data-inspector-tab=${name}]`);
     const tool = (name) => page.click(`[data-tool-tab=${name}]`);
@@ -461,8 +435,14 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
     // =================================================== right: subtitles
     await tab('subtitles');
     const S = (k) => () => D(`d.subtitles.${k}`);
-    await check('Subtítulos', 'mostrar subtítulos (apagar)', () => toggle(right, 'Mostrar subtítulos en el vídeo'), [S('enabled'), subSig]);
-    await check('Subtítulos', 'mostrar subtítulos (encender)', () => toggle(right, 'Mostrar subtítulos en el vídeo'), [S('enabled'), subSig]);
+    await check('Subtítulos', 'quitar los subtítulos (interruptor)', () => toggle(right, 'Mostrar los subtítulos en el vídeo'), [
+      S('enabled'),
+      subSig,
+    ]);
+    await check('Subtítulos', 'añadir subtítulos automáticamente (botón)', () => page.click('[data-auto-subtitles]'), [S('enabled'), subSig]);
+    await page.locator('[data-timeline]').click({ position: { x: 700, y: 20 } });
+    await check('Teclado', 'G quita los subtítulos', () => page.keyboard.press('g'), [S('enabled'), subSig]);
+    await check('Teclado', 'G los vuelve a poner', () => page.keyboard.press('g'), [S('enabled'), subSig]);
     await check('Subtítulos', 'palabras por subtítulo: 1 (cambian los bloques)', () => button(rowOf(right, 'Palabras'), '1'), [
       S('wordsPerPage'),
       () => page.locator('[data-track=subs] > [data-sub]').count(),
@@ -470,18 +450,29 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
     for (const n of ['2', '4', '5', '6', '3'])
       await check('Subtítulos', `palabras por subtítulo: ${n}`, () => button(rowOf(right, 'Palabras'), n), S('wordsPerPage'));
     await check('Subtítulos', 'letras por línea', () => setSlider(right, 'Letras por línea', 0.9), S('maxCharsPerLine'));
-    for (const preset of ['Limpio', 'Clásico', 'Titular', 'Pop', 'Una palabra', 'Caja', 'Karaoke', 'Caja amarilla', 'Amarillo']) {
-      await check(
-        'Subtítulos',
-        `estilo rápido «${preset}»`,
-        () =>
-          right
-            .locator('button', { hasText: new RegExp(`${preset}$`) })
-            .first()
-            .click(),
-        [() => D('d.subtitles'), subSig],
-      );
+    // The ready-made styles live in their own sub-tab.
+    await check(
+      'Subtítulos',
+      'subpestaña Estilos',
+      () => right.locator('[data-subtitle-tabs]').getByRole('button', { name: 'Estilos', exact: true }).click(),
+      () => page.locator('[data-subtitle-preset]').count(),
+    );
+    for (const preset of ['amarillo', 'limpio', 'clasico', 'titular', 'pop', 'una-palabra', 'caja', 'karaoke', 'caja-amarilla', 'montserrat']) {
+      await check('Subtítulos', `estilo rápido «${preset}»`, () => page.click(`[data-subtitle-preset=${preset}]`), [() => D('d.subtitles'), subSig]);
     }
+    await check(
+      'Subtítulos',
+      'subpestaña Básico',
+      () => right.locator('[data-subtitle-tabs]').getByRole('button', { name: 'Básico', exact: true }).click(),
+      () => page.locator('[data-subtitle-preset]').count(),
+    );
+    await check(
+      'Subtítulos',
+      'por defecto: Montserrat sin trazo',
+      () => Promise.resolve(),
+      () => D('[d.subtitles.fontId, d.subtitles.outlineWidth]'),
+      (b, a) => a[0][0] === 'montserrat-bold' && a[0][1] === 0,
+    );
     await check(
       'Subtítulos',
       'fuente (buscador)',
@@ -493,22 +484,33 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       [S('fontId'), subSig],
     );
     await check('Subtítulos', 'tamaño', () => setSlider(right, 'Tamaño', 0.7), [S('fontSize'), subSig]);
+    await check('Subtítulos', 'diseño: quitar negrita', () => mini(right, 'Negrita'), [S('fontId'), subSig]);
+    await check('Subtítulos', 'diseño: cursiva', () => mini(right, 'Cursiva'), [S('fontId'), subSig]);
+    await check('Subtítulos', 'diseño: subrayado', () => mini(right, 'Subrayado'), [S('underline'), subSig]);
+    await mini(right, 'Subrayado');
+    await check('Subtítulos', 'minúsculas (tt)', () => mini(right, 'todo en minúsculas'), [S('textCase'), subSig]);
+    await check('Subtítulos', 'Primera En Mayúscula (Tt)', () => mini(right, 'Primera Letra En Mayúscula'), [S('textCase'), subSig]);
+    await check('Subtítulos', 'MAYÚSCULAS (TT)', () => mini(right, 'TODO EN MAYÚSCULAS'), [S('textCase'), subSig]);
     await check('Subtítulos', 'color', () => setColor(right, 'Color', '#33ccff'), [S('textColor'), subSig]);
-    await check('Subtítulos', 'color del contorno', () => setColor(right, 'Contorno', '#aa0000'), [S('outlineColor'), subSig]);
-    await check('Subtítulos', 'grosor del contorno', () => setSlider(right, 'Grosor contorno', 0.8), [S('outlineWidth'), subSig]);
-    await check('Subtítulos', 'sombra', () => setSlider(right, 'Sombra', 0.9), [S('shadow'), subSig]);
-    await check('Subtítulos', 'mayúsculas', () => toggle(right, 'Mayúsculas'), [S('uppercase'), subSig]);
-    await check('Subtítulos', 'quitar puntuación', () => toggle(right, 'Quitar puntuación'), S('stripPunctuation'));
-    await check('Subtítulos', 'resaltar la palabra (apagar)', () => toggle(right, 'Resaltar la palabra mientras se dice'), [S('highlight'), subSig]);
-    await check('Subtítulos', 'resaltar la palabra (encender)', () => toggle(right, 'Resaltar la palabra mientras se dice'), [
-      S('highlight'),
-      subSig,
-    ]);
+    await check('Subtítulos', 'separación de caracteres', () => setSlider(right, 'Carácter', 0.6), [S('letterSpacing'), subSig]);
+    await check('Subtítulos', 'trazo (casilla)', () => checkbox(right, 'Trazo'), [S('outlineWidth'), subSig]);
+    await check('Subtítulos', 'color del trazo', () => setColor(sectionOf(right, 'Trazo'), 'Color', '#aa0000'), [S('outlineColor'), subSig]);
+    await check('Subtítulos', 'grosor del trazo', () => setSlider(sectionOf(right, 'Trazo'), 'Grosor', 0.8), [S('outlineWidth'), subSig]);
+    await check('Subtítulos', 'sombra (quitar)', () => checkbox(right, 'Sombra'), [S('shadowOn'), subSig]);
+    await check('Subtítulos', 'sombra (poner)', () => checkbox(right, 'Sombra'), [S('shadowOn'), subSig]);
+    await check('Subtítulos', 'color de la sombra', () => setColor(sectionOf(right, 'Sombra'), 'Color', '#220066'), [S('shadowColor'), subSig]);
+    await check('Subtítulos', 'opacidad de la sombra', () => setSlider(right, 'Opacidad', 0.3), [S('shadowOpacity'), subSig]);
+    await check('Subtítulos', 'desenfoque de la sombra', () => setSlider(right, 'Desenfoque', 0.7), [S('shadowBlur'), subSig]);
+    await check('Subtítulos', 'distancia de la sombra', () => setSlider(right, 'Distancia', 0.6), [S('shadow'), subSig]);
+    await check('Subtítulos', 'ángulo de la sombra', () => setSlider(right, 'Ángulo', 0.8), [S('shadowAngle'), subSig]);
+    await check('Subtítulos', 'resaltar la palabra (apagar)', () => checkbox(right, 'Resaltar la palabra que suena'), [S('highlight'), subSig]);
+    await check('Subtítulos', 'resaltar la palabra (encender)', () => checkbox(right, 'Resaltar la palabra que suena'), [S('highlight'), subSig]);
     await check('Subtítulos', 'resaltado en caja', () => button(right, 'Caja'), [S('highlightBox'), subSig]);
     await check('Subtítulos', 'color de la caja', () => setColor(right, 'Color de la caja', '#ff00aa'), [S('highlightColor'), subSig]);
     await check('Subtítulos', 'color del texto en la caja', () => setColor(right, 'Texto en la caja', '#ffffff'), [S('boxTextColor'), subSig]);
     await check('Subtítulos', 'resaltado por color', () => button(right, 'Color'), [S('highlightBox'), subSig]);
     await check('Subtítulos', 'agrandar la palabra', () => setSlider(right, 'Agrandar', 0.8), S('activeScale'));
+    await check('Subtítulos', 'quitar puntuación', () => toggle(right, 'Quitar puntuación'), S('stripPunctuation'));
     // Dimming only shows while a block still has words to come: go to the first word of a block of several.
     for (let t = 0.5; t < 15; t += 0.1) {
       await page.evaluate((t) => window.__verticut.player.seek(t), t);
@@ -518,7 +520,7 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       });
       if (first) break;
     }
-    await check('Subtítulos', 'atenuar pendientes', () => toggle(right, 'Atenuar las que aún no se han dicho'), [S('dimUpcoming'), subSig]);
+    await check('Subtítulos', 'atenuar pendientes', () => toggle(right, 'Atenuar las palabras que aún no se han dicho'), [S('dimUpcoming'), subSig]);
     await seekTo(3);
     for (const pos of ['Arriba', 'Centro', 'Abajo']) await check('Subtítulos', `posición ${pos}`, () => button(right, pos), [S('positionY'), subSig]);
     await check('Subtítulos', 'posición horizontal', () => setSlider(right, 'Horizontal', 0.3), [S('positionX'), subSig]);
@@ -585,6 +587,8 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       (b, a) => a[0] === 'video',
     );
     await check('Texto', 'escribir el texto', () => right.locator('textarea').fill('Hola mundo'), [X('text'), textSig]);
+    await check('Texto', 'diseño: quitar negrita', () => mini(right, 'Negrita'), [X('fontId'), textSig]);
+    await check('Texto', 'diseño: cursiva', () => mini(right, 'Cursiva'), [X('fontId'), textSig]);
     await check(
       'Texto',
       'fuente',
@@ -597,16 +601,23 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       [X('fontId'), textSig],
     );
     await check('Texto', 'color', () => setColor(right, 'Color', '#00ff88'), [X('color'), textSig]);
-    await check('Texto', 'color del contorno', () => setColor(right, 'Contorno', '#0000ff'), [X('outlineColor'), textSig]);
-    await check('Texto', 'grosor del contorno', () => setSlider(right, 'Grosor contorno', 0.7), [X('outlineWidth'), textSig]);
-    await check('Texto', 'sombra', () => setSlider(right, 'Sombra', 0.8), [X('shadow'), textSig]);
-    await check('Texto', 'fondo (encender)', () => toggle(right, 'Fondo (caja detrás del texto)'), [X('bgColor'), textSig]);
-    await check('Texto', 'color del fondo', () => setColor(right, 'Color del fondo', '#ff3355'), [X('bgColor'), textSig]);
-    await check('Texto', 'esquinas del fondo', () => setSlider(right, 'Esquinas', 0.9), [X('bgRadius'), textSig]);
-    await check('Texto', 'margen del fondo', () => setSlider(right, 'Margen', 0.8), [X('bgPadding'), textSig]);
+    await check('Texto', 'separación de caracteres', () => setSlider(right, 'Carácter', 0.5), [X('letterSpacing'), textSig]);
     await check('Texto', 'tamaño', () => setSlider(right, 'Tamaño', 0.5), [X('scale'), textSig]);
     await check('Texto', 'giro', () => setSlider(right, 'Giro', 0.6), [X('rotation'), textSig]);
-    await check('Texto', 'fondo (apagar)', () => toggle(right, 'Fondo (caja detrás del texto)'), [X('bgColor'), textSig]);
+    await check('Texto', 'color del trazo', () => setColor(sectionOf(right, 'Trazo'), 'Color', '#0000ff'), [X('outlineColor'), textSig]);
+    await check('Texto', 'grosor del trazo', () => setSlider(sectionOf(right, 'Trazo'), 'Grosor', 0.7), [X('outlineWidth'), textSig]);
+    await check('Texto', 'trazo (quitar)', () => checkbox(right, 'Trazo'), [X('outlineWidth'), textSig]);
+    await check('Texto', 'color de la sombra', () => setColor(sectionOf(right, 'Sombra'), 'Color', '#550000'), [X('shadowColor'), textSig]);
+    await check('Texto', 'opacidad de la sombra', () => setSlider(right, 'Opacidad', 0.4), [X('shadowOpacity'), textSig]);
+    await check('Texto', 'desenfoque de la sombra', () => setSlider(right, 'Desenfoque', 0.6), [X('shadowBlur'), textSig]);
+    await check('Texto', 'distancia de la sombra', () => setSlider(right, 'Distancia', 0.7), [X('shadow'), textSig]);
+    await check('Texto', 'ángulo de la sombra', () => setSlider(right, 'Ángulo', 0.2), [X('shadowAngle'), textSig]);
+    await check('Texto', 'sombra (quitar)', () => checkbox(right, 'Sombra'), [X('shadowOn'), textSig]);
+    await check('Texto', 'fondo (encender)', () => checkbox(right, 'Fondo'), [X('bgColor'), textSig]);
+    await check('Texto', 'color del fondo', () => setColor(sectionOf(right, 'Fondo'), 'Color', '#ff3355'), [X('bgColor'), textSig]);
+    await check('Texto', 'esquinas del fondo', () => setSlider(right, 'Esquinas', 0.9), [X('bgRadius'), textSig]);
+    await check('Texto', 'margen del fondo', () => setSlider(right, 'Margen', 0.8), [X('bgPadding'), textSig]);
+    await check('Texto', 'fondo (apagar)', () => checkbox(right, 'Fondo'), [X('bgColor'), textSig]);
     for (const shape of ['Arco', 'Círculo', 'Onda', 'Recto'])
       await check('Texto', `forma ${shape}`, () => button(right, shape), [() => D('[d.texts[0].curve, d.texts[0].curveAmount]'), textSig]);
     await button(right, 'Arco');
@@ -782,6 +793,63 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
     await check('Velocidad', 'deslizador', () => setSlider(right, 'Velocidad', 0.5), [() => D('d.clips.map(c => c.speed || 1)'), dur]);
     await page.click('[data-speed="1"]');
 
+    // =================================================== right: smart
+    await tab('smart');
+    await page.evaluate(() =>
+      window.__verticut.useEditor.getState().commit((d) => {
+        for (const c of d.clips) c.cuts = [];
+      }),
+    );
+    await check(
+      'Inteligente',
+      'pausas de más de…',
+      () => setSlider(right, 'Pausas de más de', 0.1),
+      () => D('d.settings.silenceMin'),
+    );
+    await check(
+      'Inteligente',
+      'quitar silencios',
+      () => page.click('[data-smart=silence]'),
+      () => D('d.clips.map(c => c.cuts.length)'),
+    );
+    await check(
+      'Inteligente',
+      'recuperar los silencios',
+      () => right.getByRole('button', { name: 'Recuperarlos' }).click(),
+      () => D('d.clips.map(c => c.cuts.length)'),
+    );
+    await check(
+      'Inteligente',
+      'quitar los subtítulos',
+      () => page.click('[data-smart=subtitles]'),
+      () => D('d.subtitles.enabled'),
+    );
+    await check(
+      'Inteligente',
+      'añadir subtítulos a todo el vídeo',
+      () => page.click('[data-smart=subtitles]'),
+      () => D('d.subtitles.enabled'),
+    );
+    await check(
+      'Inteligente',
+      'quitar muletillas',
+      () => page.click('[data-smart=filler]'),
+      () => D('d.clips.map(c => c.cuts.length)'),
+    );
+    await check(
+      'Inteligente',
+      'quitar tomas repetidas',
+      () => page.click('[data-smart=retake]'),
+      () => page.locator('text=/toma|repetid/i').count(),
+      (b, a) => a[0] > 0,
+    );
+    await page.evaluate(() =>
+      window.__verticut.useEditor.getState().commit((d) => {
+        for (const c of d.clips) c.cuts = [];
+        d.settings.silenceMin = 0.4;
+      }),
+    );
+
     // =================================================== right: audio
     await tab('audio');
     await check('Audio', 'volumen de los vídeos', () => setSlider(right, 'Volumen', 0.4), [
@@ -811,13 +879,6 @@ const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY, 'i') : null;
       () => D('d.clips.length'),
     );
     await undo();
-    await tab('video');
-    await check(
-      'Multimedia',
-      'enlace «Voz y música»',
-      () => left.locator('button:has-text("Voz y música")').first().click(),
-      () => D('s.inspectorTab'),
-    );
     await check(
       'Multimedia',
       'arrastrar a la pista de superposición',

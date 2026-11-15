@@ -9,7 +9,7 @@
  */
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { ProjectDoc, Word } from '../shared/types';
 import { OUTPUT_FPS, OUTPUT_HEIGHT, OUTPUT_WIDTH } from '../shared/types';
 import { FRAME, clamp } from '../shared/ranges';
@@ -19,6 +19,7 @@ import { buildAss } from '../shared/ass';
 import { getFont } from '../shared/fonts';
 import { overlayRect } from '../shared/text-curve';
 import { textMotion } from '../shared/text-anim';
+import { OVERLAY_LANES, TEXT_LANES, byLayer } from '../shared/lanes';
 import { config } from './config';
 import { ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
 import type { JobContext } from './jobs';
@@ -148,28 +149,27 @@ export function buildExportPlan(
 
   // B-roll overlays.
   let video = 'vcat';
-  [...doc.broll]
-    .sort((a, b) => a.start - b.start)
-    .forEach((b, j) => {
-      const m = need(b.mediaId);
-      const start = clamp(b.start, 0, total);
-      const end = Math.min(total, b.start + b.duration);
-      if (end - start < FRAME) return;
-      const dur = end - start;
-      const idx = inputs.length;
-      if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(dur + 0.2), '-i', m.sourcePath]);
-      else inputs.push(['-ss', num(Math.max(0, b.srcIn)), '-t', num(dur + 0.2), '-i', m.sourcePath]);
-      // Full-frame b-roll is cropped to cover; a moved or resized overlay keeps its shape (sticker, picture-in-picture).
-      const rect = overlayRect(m.width ?? 0, m.height ?? 0, W, H, b.x ?? 0.5, b.y ?? 0.5, b.scale ?? 1);
-      const full = (b.scale ?? 1) === 1 && (b.x ?? 0.5) === 0.5 && (b.y ?? 0.5) === 0.5;
-      const size = full ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}` : `scale=${even(rect.width)}:${even(rect.height)}`;
-      const at = full ? '0:0' : `${Math.round(rect.left)}:${Math.round(rect.top)}`;
-      filters.push(
-        `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},${size},setsar=1,format=yuva420p,trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB[b${j}]`,
-      );
-      filters.push(`[${video}][b${j}]overlay=${at}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vb${j}]`);
-      video = `vb${j}`;
-    });
+  // Lowest layer first: overlays on upper rows of the timeline cover the ones below.
+  byLayer(doc.broll, OVERLAY_LANES).forEach((b, j) => {
+    const m = need(b.mediaId);
+    const start = clamp(b.start, 0, total);
+    const end = Math.min(total, b.start + b.duration);
+    if (end - start < FRAME) return;
+    const dur = end - start;
+    const idx = inputs.length;
+    if (m.kind === 'image') inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(dur + 0.2), '-i', m.sourcePath]);
+    else inputs.push(['-ss', num(Math.max(0, b.srcIn)), '-t', num(dur + 0.2), '-i', m.sourcePath]);
+    // Full-frame b-roll is cropped to cover; a moved or resized overlay keeps its shape (sticker, picture-in-picture).
+    const rect = overlayRect(m.width ?? 0, m.height ?? 0, W, H, b.x ?? 0.5, b.y ?? 0.5, b.scale ?? 1);
+    const full = (b.scale ?? 1) === 1 && (b.x ?? 0.5) === 0.5 && (b.y ?? 0.5) === 0.5;
+    const size = full ? `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}` : `scale=${even(rect.width)}:${even(rect.height)}`;
+    const at = full ? '0:0' : `${Math.round(rect.left)}:${Math.round(rect.top)}`;
+    filters.push(
+      `[${idx}:v:0]settb=AVTB,setpts=PTS-STARTPTS,fps=${FPS},${size},setsar=1,format=yuva420p,trim=duration=${num(dur)},setpts=PTS+${num(start)}/TB[b${j}]`,
+    );
+    filters.push(`[${video}][b${j}]overlay=${at}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vb${j}]`);
+    video = `vb${j}`;
+  });
 
   // Subtitles.
   let ass: string | null = null;
@@ -184,7 +184,7 @@ export function buildExportPlan(
     }
   }
   // Manual texts (pre-rendered PNGs), on top of everything.
-  doc.texts.forEach((t, j) => {
+  byLayer(doc.texts, TEXT_LANES).forEach((t, j) => {
     const img = textImages.find((x) => x.id === t.id);
     const start = clamp(t.start, 0, total);
     const end = Math.min(total, t.start + t.duration);
@@ -297,6 +297,9 @@ export async function runExport(doc: ProjectDoc, quality: ExportQuality, ctx: Jo
   return { name, url: `/api/exports/${encodeURIComponent(name)}`, duration: plan.duration, size };
 }
 
+/** Name of the video inside the scratch directory while it is being rendered. */
+const RENDERING = 'render.mp4';
+
 /**
  * Runs FFmpeg for a plan. `work` is a scratch directory (subtitle file, fonts
  * and filter graph); it is removed on success and kept on failure for debugging.
@@ -327,13 +330,21 @@ export async function renderPlan(
     '-c:v', 'libx264', ...QUALITY[quality], '-pix_fmt', 'yuv420p', '-r', String(FPS),
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
     '-movflags', '+faststart', '-t', num(plan.duration),
-    out,
+    RENDERING,
   ];
   await writeFile(path.join(work, 'command.json'), JSON.stringify(args, null, 1));
+  // The video is rendered inside the scratch directory and only moved to its
+  // final name once complete, so a half-written file never shows up as an export.
+  const partial = path.join(work, RENDERING);
   try {
     await ffmpegWithProgress(args, plan.duration, onProgress, { cwd: work, signal });
+    await rename(partial, out).catch(async (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EXDEV') throw err;
+      await copyFile(partial, out);
+    });
   } catch (err) {
-    await rm(out, { force: true });
+    // A cancelled render leaves nothing behind; a failed one keeps its files to find out why.
+    await rm(signal?.aborted ? work : partial, { recursive: true, force: true });
     throw err;
   }
   await rm(work, { recursive: true, force: true });
@@ -344,9 +355,10 @@ export async function listExports() {
   const files = (await readdir(exportsDir())).filter((f) => f.endsWith('.mp4'));
   const out = await Promise.all(
     files.map(async (name) => {
-      const st = await stat(path.join(exportsDir(), name));
-      return { name, url: `/api/exports/${encodeURIComponent(name)}`, size: st.size, createdAt: st.mtime.toISOString() };
+      // A file can disappear between the listing and this read (deleted by the user, for instance).
+      const st = await stat(path.join(exportsDir(), name)).catch(() => null);
+      return st && { name, url: `/api/exports/${encodeURIComponent(name)}`, size: st.size, createdAt: st.mtime.toISOString() };
     }),
   );
-  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return out.filter((e) => e !== null).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

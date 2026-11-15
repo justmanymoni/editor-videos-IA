@@ -1,3 +1,4 @@
+import type { Filmstrip } from './filmstrip';
 /**
  * Types shared by the browser editor and the Node.js server.
  * Every time value is expressed in seconds.
@@ -60,6 +61,8 @@ export interface MediaInfo {
   transcript: TranscriptState;
   /** Voice / music separation of the clip's audio. */
   separation: SeparationState;
+  /** Frames along the video for the timeline: undefined = not made yet, null = could not be made. */
+  filmstrip?: Filmstrip | null;
 }
 
 export interface Word {
@@ -129,6 +132,8 @@ export interface BrollItem {
   y?: number;
   /** 1 = covers the whole frame; smaller values make a sticker / picture-in-picture. */
   scale?: number;
+  /** Row of the timeline it sits on: overlays on higher rows are drawn on top. */
+  lane?: number;
 }
 
 /** Text typed by the user and placed freely on the frame. */
@@ -242,6 +247,8 @@ export interface AudioItem {
   volume: number;
   fadeIn: number;
   fadeOut: number;
+  /** Row of the timeline it sits on (only how the tracks are arranged: all audio is mixed). */
+  lane?: number;
 }
 
 /** How a subtitle block appears. */
@@ -391,7 +398,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   exportQuality: 'normal',
 };
 
-export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup' | 'separate' | 'mix';
+export type JobType = 'ingest' | 'transcribe' | 'export' | 'setup' | 'separate' | 'mix' | 'filmstrip';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error' | 'cancelled';
 
 export interface JobInfo {

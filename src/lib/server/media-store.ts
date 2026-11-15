@@ -36,6 +36,8 @@ export function mediaPaths(id: string) {
     voice: path.join(dir, 'voice.flac'),
     music: path.join(dir, 'music.flac'),
     voiceEnvelope: path.join(dir, 'envelope-voice.bin'),
+    /** Frames along the video, packed in one image (see shared/filmstrip). */
+    filmstrip: path.join(dir, 'filmstrip.jpg'),
     /** Preview with the voice on the left channel and the music on the right one. */
     stems: path.join(dir, 'stems-preview.mp4'),
   };

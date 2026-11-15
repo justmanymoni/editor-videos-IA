@@ -3,13 +3,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { FONT_GROUPS, cssFamily, getFont, searchFonts, type SubtitleFont } from '@/lib/shared/fonts';
+import { cssFamily, fontsByName, getFont, searchFonts, type SubtitleFont } from '@/lib/shared/fonts';
 
 const family = (f: SubtitleFont) => `"${cssFamily(f)}"`;
 
 /**
- * Font list with a search box. Fonts are grouped by style (bold, regular,
- * italic, classic…) and each name is drawn in its own font.
+ * Font list with a search box, in alphabetical order. Each name is drawn in
+ * its own font.
  */
 export function FontPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -21,8 +21,8 @@ export function FontPicker({ value, onChange }: { value: string; onChange: (id: 
   const list = useRef<HTMLDivElement>(null);
   const current = getFont(value);
   const found = useMemo(() => searchFonts(query), [query]);
-  // In the order they are shown: group after group.
-  const ordered = useMemo(() => FONT_GROUPS.flatMap((g) => found.filter((f) => f.group === g)), [found]);
+  // Alphabetical, as in any font menu.
+  const ordered = useMemo(() => fontsByName(found), [found]);
 
   const close = () => {
     setOpen(false);
@@ -136,38 +136,26 @@ export function FontPicker({ value, onChange }: { value: string; onChange: (id: 
             </label>
             <div ref={list} role="listbox" className="min-h-0 flex-1 overflow-y-auto py-1">
               {!ordered.length && <p className="px-3 py-4 text-center text-xs text-faint">Ninguna fuente coincide con «{query}»</p>}
-              {FONT_GROUPS.map((group) => {
-                const fonts = found.filter((f) => f.group === group);
-                if (!fonts.length) return null;
-                return (
-                  <div key={group}>
-                    <p className="px-2.5 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-faint uppercase">{group}</p>
-                    {fonts.map((f) => {
-                      const index = ordered.indexOf(f);
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          role="option"
-                          aria-selected={f.id === value}
-                          data-active={index === active}
-                          onPointerMove={() => setActive(index)}
-                          onClick={() => choose(f.id)}
-                          className={clsx(
-                            'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[15px] leading-tight text-fg',
-                            index === active && 'bg-panel-3',
-                          )}
-                        >
-                          <span className="min-w-0 flex-1 truncate" style={{ fontFamily: family(f) }}>
-                            {f.label}
-                          </span>
-                          {f.id === value && <Check size={13} className="shrink-0 text-accent" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              {ordered.map((f, index) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="option"
+                  aria-selected={f.id === value}
+                  data-active={index === active}
+                  onPointerMove={() => setActive(index)}
+                  onClick={() => choose(f.id)}
+                  className={clsx(
+                    'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[15px] leading-tight text-fg',
+                    index === active && 'bg-panel-3',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate" style={{ fontFamily: family(f) }}>
+                    {f.label}
+                  </span>
+                  {f.id === value && <Check size={13} className="shrink-0 text-accent" />}
+                </button>
+              ))}
             </div>
           </div>,
           document.body,

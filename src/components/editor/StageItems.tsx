@@ -11,6 +11,7 @@ import type { BrollItem, TextItem } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
 import { overlayRect } from '@/lib/shared/text-curve';
+import { TEXT_LANES, byLayer } from '@/lib/shared/lanes';
 import { textPose } from '@/lib/shared/text-anim';
 import { selRefs, useEditor } from '@/lib/client/store';
 import { usePlayback } from '@/lib/client/player';
@@ -238,7 +239,7 @@ export function StageItems({
   };
   return (
     <>
-      {texts
+      {byLayer(texts, TEXT_LANES)
         .filter((t) => visible.has(t.id))
         .map((t) => (
           <TextLayer key={t.id} item={t} onSize={onSize} onDown={(e) => begin(e, 'move', { kind: 'text', item: t })} />

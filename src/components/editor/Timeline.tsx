@@ -5,6 +5,7 @@ import { ArrowLeftToLine, ArrowRightToLine, Captions, Film, Layers, Maximize2, M
 import type { AudioItem, BrollItem, Envelope, MediaInfo, TextItem } from '@/lib/shared/types';
 import { FRAME, clamp } from '@/lib/shared/ranges';
 import { sequenceDuration, type Segment } from '@/lib/shared/timeline';
+import { assignLanes, type Lanes } from '@/lib/shared/lanes';
 import type { SubPage } from '@/lib/shared/subtitles';
 import { mediaUrl } from '@/lib/client/api';
 import { refKey, selRefs, selectionOf, toggleRef, useEditor, type SelRef, type Selection } from '@/lib/client/store';
@@ -29,14 +30,8 @@ import { IconButton, Slider } from '@/components/ui';
 import { MEDIA_DRAG_TYPE } from './ToolsPanel';
 
 const H = { toolbar: 40, ruler: 24, text: 30, subs: 28, broll: 44, main: 62, audio: 40 };
-/** Top of each track inside the scrolling area, for the selection box. */
-const ROW_TOP = {
-  text: H.ruler,
-  subs: H.ruler + H.text,
-  broll: H.ruler + H.text + H.subs,
-  main: H.ruler + H.text + H.subs + H.broll,
-  audio: H.ruler + H.text + H.subs + H.broll + H.main,
-};
+type TrackId = 'text' | 'subs' | 'broll' | 'main' | 'audio';
+const TRACK_ORDER: TrackId[] = ['text', 'subs', 'broll', 'main', 'audio'];
 const EDGE = 7;
 const MIN_PPS = 4;
 const MAX_PPS = 400;
@@ -117,10 +112,15 @@ function Playhead({ pps, scroller }: { pps: number; scroller: React.RefObject<HT
   );
 }
 
-function TrackLabel({ icon: Icon, label, height }: { icon: typeof Film; label: string; height: number }) {
+function TrackLabel({ icon: Icon, label, height, layers = 1 }: { icon: typeof Film; label: string; height: number; layers?: number }) {
   return (
     <div className="flex items-center gap-1.5 border-b border-line px-3 text-[11px] font-medium text-muted" style={{ height }}>
-      <Icon size={12} /> {label}
+      <Icon size={12} className="shrink-0" /> <span className="truncate">{label}</span>
+      {layers > 1 && (
+        <span className="ml-auto shrink-0 rounded bg-panel-3 px-1 text-[10px] text-faint" title={`${layers} capas a la vez`}>
+          ×{layers}
+        </span>
+      )}
     </div>
   );
 }
@@ -160,8 +160,26 @@ export function Timeline({ height }: { height: number }) {
   const [dropTrack, setDropTrack] = useState<'main' | 'broll' | 'audio' | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const fitted = useRef(false);
-  const live = useRef({ pps, segs, doc, media, duration, pages });
-  live.current = { pps, segs, doc, media, duration, pages };
+  // Tracks grow by one row for every extra layer of items that overlap in time.
+  const lanes = useMemo<Record<ItemKind, Lanes>>(
+    () => ({ text: assignLanes(doc.texts), broll: assignLanes(doc.broll), audio: assignLanes(doc.audio) }),
+    [doc.texts, doc.broll, doc.audio],
+  );
+  const rowHeight: Record<TrackId, number> = {
+    text: H.text * lanes.text.count,
+    subs: H.subs,
+    broll: H.broll * lanes.broll.count,
+    main: H.main,
+    audio: H.audio * lanes.audio.count,
+  };
+  const rowTop = {} as Record<TrackId, number>;
+  let tracksHeight = H.ruler;
+  for (const id of TRACK_ORDER) {
+    rowTop[id] = tracksHeight;
+    tracksHeight += rowHeight[id];
+  }
+  const live = useRef({ pps, segs, doc, media, duration, pages, lanes, rowTop, rowHeight });
+  live.current = { pps, segs, doc, media, duration, pages, lanes, rowTop, rowHeight };
   const selectedKeys = useMemo(() => new Set(selRefs(selection).map(refKey)), [selection]);
 
   const fit = useCallback(() => {
@@ -223,19 +241,24 @@ export function Timeline({ height }: { height: number }) {
 
   /** Every element touched by a box drawn on the tracks. */
   const elementsIn = (ax: number, ay: number, bx: number, by: number): SelRef[] => {
-    const { pps: p, segs: sg, doc: d, pages: pg } = live.current;
+    const { pps: p, segs: sg, doc: d, pages: pg, lanes: ln, rowTop: tops, rowHeight: heights } = live.current;
     const from = Math.min(ax, bx) / p;
     const to = Math.max(ax, bx) / p;
     const top = Math.min(ay, by);
     const bottom = Math.max(ay, by);
-    const row = (k: keyof typeof ROW_TOP) => top < ROW_TOP[k] + H[k] && bottom > ROW_TOP[k];
+    const row = (k: TrackId) => top < tops[k] + heights[k] && bottom > tops[k];
+    /** The row of one item inside a track with several layers. */
+    const lane = (k: ItemKind, id: string) => {
+      const y = tops[k] + (ln[k].of.get(id) ?? 0) * H[k];
+      return top < y + H[k] && bottom > y;
+    };
     const over = (start: number, end: number) => start < to && end > from;
     const out: SelRef[] = [];
-    if (row('text')) for (const x of d.texts) if (over(x.start, x.start + x.duration)) out.push({ kind: 'text', id: x.id });
+    for (const x of d.texts) if (over(x.start, x.start + x.duration) && lane('text', x.id)) out.push({ kind: 'text', id: x.id });
     if (row('subs') && d.subtitles.enabled) for (const x of pg) if (over(x.start, x.end)) out.push({ kind: 'subtitle', page: x.index });
-    if (row('broll')) for (const x of d.broll) if (over(x.start, x.start + x.duration)) out.push({ kind: 'broll', id: x.id });
+    for (const x of d.broll) if (over(x.start, x.start + x.duration) && lane('broll', x.id)) out.push({ kind: 'broll', id: x.id });
     if (row('main')) for (const x of sg) if (over(x.tlStart, x.tlEnd)) out.push({ kind: 'segment', clipId: x.clipId, rangeIndex: x.rangeIndex });
-    if (row('audio')) for (const x of d.audio) if (over(x.start, x.start + x.duration)) out.push({ kind: 'audio', id: x.id });
+    for (const x of d.audio) if (over(x.start, x.start + x.duration) && lane('audio', x.id)) out.push({ kind: 'audio', id: x.id });
     return out;
   };
   const snap = (t: number, pts: number[]) => {
@@ -431,12 +454,11 @@ export function Timeline({ height }: { height: number }) {
 
   const moveMarker =
     drag?.kind === 'seg-move' && drag.moved ? nearest(clipBoundaries, (drag.seg.tlStart + drag.seg.tlEnd) / 2 + drag.dx / pps) : null;
-  const tracksHeight = H.ruler + H.text + H.subs + H.broll + H.main + H.audio;
   const itemTrack = (track: ItemKind, items: Item[], hint: string, extra?: object) => (
     <div
       data-track={track}
       className={clsx('relative border-b border-line', dropTrack === track && 'bg-accent/10')}
-      style={{ height: H[track] }}
+      style={{ height: rowHeight[track] }}
       onPointerDown={onEmptyDown}
       {...extra}
     >
@@ -449,6 +471,7 @@ export function Timeline({ height }: { height: number }) {
           env={track === 'audio' && 'mediaId' in item ? envelopes[item.mediaId] : undefined}
           pps={pps}
           drag={drag}
+          lane={lanes[track].of.get(item.id) ?? 0}
           selected={selectedKeys.has(`${track}:${item.id}`)}
           onDown={onItemDown}
         />
@@ -494,11 +517,11 @@ export function Timeline({ height }: { height: number }) {
       <div className="flex min-h-0 flex-1 overflow-y-auto">
         <div className="w-32 shrink-0 border-r border-line" style={{ minHeight: tracksHeight }}>
           <div style={{ height: H.ruler }} className="border-b border-line" />
-          <TrackLabel icon={Type} label="Texto" height={H.text} />
-          <TrackLabel icon={Captions} label="Subtítulos" height={H.subs} />
-          <TrackLabel icon={Layers} label="Superposición" height={H.broll} />
-          <TrackLabel icon={Film} label="Vídeo" height={H.main} />
-          <TrackLabel icon={Music} label="Audio" height={H.audio} />
+          <TrackLabel icon={Type} label="Texto" height={rowHeight.text} layers={lanes.text.count} />
+          <TrackLabel icon={Captions} label="Subtítulos" height={rowHeight.subs} />
+          <TrackLabel icon={Layers} label="Superposición" height={rowHeight.broll} layers={lanes.broll.count} />
+          <TrackLabel icon={Film} label="Vídeo" height={rowHeight.main} />
+          <TrackLabel icon={Music} label="Audio" height={rowHeight.audio} layers={lanes.audio.count} />
         </div>
         <div ref={scroller} className="relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ minHeight: tracksHeight + 12 }}>
           <div ref={content} className="relative" style={{ width, height: tracksHeight }}>
@@ -647,6 +670,7 @@ function ItemBlock({
   env,
   pps,
   drag,
+  lane,
   selected,
   onDown,
 }: {
@@ -656,6 +680,8 @@ function ItemBlock({
   env?: Envelope;
   pps: number;
   drag: Drag | null;
+  /** Row inside the track, when several items overlap in time. */
+  lane: number;
   selected: boolean;
   onDown: (e: React.PointerEvent, track: ItemKind, item: Item) => void;
 }) {
@@ -683,11 +709,11 @@ function ItemBlock({
         e.currentTarget.style.cursor = r.width > EDGE * 3 && (e.clientX - r.left < EDGE || r.right - e.clientX < EDGE) ? 'ew-resize' : 'grab';
       }}
       className={clsx(
-        'absolute top-1 bottom-1 overflow-hidden rounded-md border',
+        'absolute overflow-hidden rounded-md border',
         ITEM_STYLE[track],
         selected ? 'z-10 border-accent ring-1 ring-accent' : 'border-black/40',
       )}
-      style={{ left: start * pps, width: w }}
+      style={{ left: start * pps, width: w, top: lane * H[track] + 4, height: H[track] - 8 }}
       title={label}
     >
       {track === 'broll' && thumb && (

@@ -45,7 +45,7 @@ export function toggleRef(sel: Selection, ref: SelRef): Selection {
 
 /** Tabs of the right panel (properties) and of the left one (tools). */
 export type InspectorTab = 'video' | 'audio' | 'subtitles' | 'animation';
-export type ToolsTab = 'media' | 'audio' | 'text' | 'transcript';
+export type ToolsTab = 'media' | 'audio' | 'text' | 'templates' | 'transcript';
 
 export interface Upload {
   id: string;

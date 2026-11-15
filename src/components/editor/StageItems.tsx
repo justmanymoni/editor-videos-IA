@@ -11,6 +11,7 @@ import type { BrollItem, TextItem } from '@/lib/shared/types';
 import { OUTPUT_HEIGHT, OUTPUT_WIDTH } from '@/lib/shared/types';
 import { clamp } from '@/lib/shared/ranges';
 import { overlayRect } from '@/lib/shared/text-curve';
+import { textPose } from '@/lib/shared/text-anim';
 import { selRefs, useEditor } from '@/lib/client/store';
 import { usePlayback } from '@/lib/client/player';
 import { pickItems, updateItem, updateItems } from '@/lib/client/actions';
@@ -109,6 +110,24 @@ function TextLayer({ item, onSize, onDown }: { item: TextItem; onSize: (id: stri
       alive = false;
     };
   }, [item, onSize]);
+  // Entrance and exit animations run while the video plays; when it is stopped the text is shown as it rests, so it can be edited.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rest = () => {
+      el.style.opacity = '';
+      el.style.transform = '';
+    };
+    if (item.animIn === 'none' && item.animOut === 'none') return rest();
+    const apply = (s: { time: number; playing: boolean }) => {
+      if (!s.playing) return rest();
+      const pose = textPose(item, s.time - item.start, item.duration);
+      el.style.opacity = String(pose.opacity);
+      el.style.transform = `translate(${pose.dx}px, ${pose.dy}px) scale(${pose.scale})`;
+    };
+    apply(usePlayback.getState());
+    return usePlayback.subscribe(apply);
+  }, [item]);
   return (
     <canvas
       ref={ref}

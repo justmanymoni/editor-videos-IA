@@ -13,6 +13,7 @@ import { addCuts, moveRange, replaceCuts, restoreRanges, splitClip, splitItem, t
 import { computeFillerCuts, computeRetakeCuts, computeSilenceCuts } from '@/lib/shared/cleanup';
 import { alignScript } from '@/lib/shared/script';
 import { splitTextBlocks } from '@/lib/shared/text';
+import type { TextPreset } from '@/lib/shared/text-presets';
 import { buildSrt, buildVtt, captionPages, transcriptText } from '@/lib/shared/text-export';
 import { api, uploadFile } from './api';
 import { currentDerived } from './derived';
@@ -616,6 +617,30 @@ export function addTextBlocks(raw: string, style: Partial<TextItem> = {}, wordsP
   // All the new blocks stay selected, so their look can be changed at once.
   ed().setSelection(selectionOf(items.map((x): SelRef => ({ kind: 'text', id: x.id }))));
   if (items.length > 1) ed().toast(`${items.length} bloques de texto añadidos y seleccionados`, 'success');
+}
+
+/** Adds a ready-made text (title, label, boxed keyword…) at the playhead and selects it. */
+export function addTextPreset(preset: TextPreset) {
+  const item: TextItem = {
+    ...DEFAULT_TEXT,
+    ...preset.style,
+    id: newId(),
+    text: preset.sample,
+    start: usePlayback.getState().time,
+    duration: Math.max(2, textDuration(preset.sample)),
+  };
+  ed().commitDoc((d) => ({ ...d, texts: [...d.texts, item] }));
+  ed().setSelection({ kind: 'text', id: item.id });
+}
+
+/** Gives the look and animation of a preset to the selected texts, keeping their wording, place and timing. */
+export function applyTextPreset(preset: TextPreset) {
+  const s = ed();
+  const texts = s.doc ? pickItems(s.doc, selRefs(s.selection)).filter((x) => x.kind === 'text') : [];
+  if (!texts.length) return s.toast('Selecciona antes un texto');
+  const { x: _x, y: _y, ...look } = { ...DEFAULT_TEXT, ...preset.style };
+  const { text: _text, ...patch } = look;
+  updateItems(texts.map(({ item }) => ({ kind: 'text' as const, id: item.id, patch })));
 }
 
 /** Splits one text containing slashes into consecutive texts that share its time span. */

@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Layers,
+  LayoutTemplate,
   Loader2,
   Mic,
   Music,
@@ -43,6 +44,7 @@ import {
 } from '@/lib/client/actions';
 import { Button, IconButton, ProgressBar, Segmented, SliderRow } from '@/components/ui';
 import { TextTab } from './TextTab';
+import { TemplatesTab } from './TemplatesTab';
 import { TranscriptPanel } from './TranscriptPanel';
 
 export const MEDIA_DRAG_TYPE = 'application/x-verticut-media';
@@ -51,6 +53,7 @@ const TABS: [ToolsTab, string, typeof Film][] = [
   ['media', 'Multimedia', Film],
   ['audio', 'Audio', Music],
   ['text', 'Texto', Type],
+  ['templates', 'Plantillas', LayoutTemplate],
   ['transcript', 'Transcripción', FileText],
 ];
 
@@ -79,6 +82,7 @@ export function ToolsPanel() {
         {tab === 'media' && <MediaTab />}
         {tab === 'audio' && <AudioTab />}
         {tab === 'text' && <TextTab />}
+        {tab === 'templates' && <TemplatesTab />}
         {tab === 'transcript' && <TranscriptPanel />}
       </div>
     </aside>

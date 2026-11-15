@@ -30,11 +30,20 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
   let glyphs: Glyph[];
   let halfW: number;
   let halfH: number;
+  /** Half size of the box behind the text, when it has one. */
+  let box: { w: number; h: number } | null = null;
   if (item.curve === 'none') {
     const lines = item.text.split('\n');
     glyphs = lines.map((text, i) => ({ text, x: 0, y: (i - (lines.length - 1) / 2) * size * LINE_HEIGHT, rot: 0 }));
     halfW = Math.max(size / 2, ...lines.map((l) => ctx.measureText(l).width / 2));
     halfH = (lines.length * size * LINE_HEIGHT) / 2;
+    if (item.bgColor) {
+      const pad = item.bgPadding * size;
+      // A little less room above and below: the line height already leaves some.
+      box = { w: halfW + pad, h: halfH + pad * 0.45 };
+      halfW = box.w;
+      halfH = box.h;
+    }
   } else {
     const chars = [...item.text.replace(/\s*\n\s*/g, ' ')];
     const positions = layoutCurve(
@@ -59,7 +68,7 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
   canvas.width = Math.ceil(width * pixelRatio);
   canvas.height = Math.ceil(height * pixelRatio);
 
-  const draw = (c: CanvasRenderingContext2D, fill: string, stroke: string) => {
+  const draw = (c: CanvasRenderingContext2D, fill: string, stroke: string, background: string) => {
     c.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     c.translate(width / 2, height / 2);
     c.rotate(rot);
@@ -68,6 +77,12 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
     c.textAlign = 'center';
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
+    if (box) {
+      c.fillStyle = background;
+      c.beginPath();
+      c.roundRect(-box.w, -box.h, box.w * 2, box.h * 2, Math.min(box.w, box.h) * Math.min(1, Math.max(0, item.bgRadius)));
+      c.fill();
+    }
     for (const g of glyphs) {
       c.save();
       c.translate(g.x, g.y);
@@ -88,14 +103,14 @@ export function renderText(canvas: HTMLCanvasElement, item: TextItem, pixelRatio
     const mask = document.createElement('canvas');
     mask.width = canvas.width;
     mask.height = canvas.height;
-    draw(mask.getContext('2d')!, '#000', '#000');
+    draw(mask.getContext('2d')!, '#000', '#000', '#000');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 0.5;
     const shift = item.shadow * item.scale * pixelRatio;
     ctx.drawImage(mask, shift, shift);
     ctx.globalAlpha = 1;
   }
-  draw(ctx, item.color, item.outlineColor);
+  draw(ctx, item.color, item.outlineColor, item.bgColor);
   return { width, height };
 }
 

@@ -1,5 +1,5 @@
 'use client';
-import { AlignCenterHorizontal, AlignCenterVertical, AudioLines, Maximize, Scissors, Trash2 } from 'lucide-react';
+import { AlignCenterHorizontal, AlignCenterVertical, AudioLines, Maximize, Scissors, Sparkles, Trash2 } from 'lucide-react';
 import type { AudioItem, BrollItem, MainClip, TextItem } from '@/lib/shared/types';
 import { selRefs, useEditor, type SelRef } from '@/lib/client/store';
 import {
@@ -12,7 +12,7 @@ import {
   type ItemKind,
   type ItemPatch,
 } from '@/lib/client/actions';
-import { Button, ColorField, Row, Section, Segmented, SliderRow } from '@/components/ui';
+import { Button, ColorField, Row, Section, Segmented, SliderRow, Toggle } from '@/components/ui';
 import { TranscriptStatus } from './ToolsPanel';
 import { FontPicker } from './FontPicker';
 import { SHAPES, SHAPE_OPTIONS, type TextShape } from './TextTab';
@@ -117,6 +117,39 @@ function TextStyle({ items }: { items: TextItem[] }) {
       </Row>
       <SliderRow label="Grosor contorno" value={item.outlineWidth} min={0} max={24} onChange={(v) => set({ outlineWidth: v }, 'ow')} />
       <SliderRow label="Sombra" value={item.shadow} min={0} max={24} onChange={(v) => set({ shadow: v }, 'shadow')} />
+      <Toggle
+        label="Fondo (caja detrás del texto)"
+        checked={!!item.bgColor}
+        onChange={(v) => set(v ? { bgColor: '#FFE600', color: '#000000', outlineWidth: 0, shadow: 0 } : { bgColor: '' })}
+      />
+      {item.bgColor && (
+        <>
+          <Row label="Color del fondo">
+            <ColorField value={item.bgColor} onChange={(v) => set({ bgColor: v }, 'bg')} />
+          </Row>
+          <SliderRow
+            label="Esquinas"
+            value={item.bgRadius}
+            min={0}
+            max={1}
+            step={0.05}
+            scale={100}
+            unit="%"
+            onChange={(v) => set({ bgRadius: v }, 'bgr')}
+          />
+          <SliderRow
+            label="Margen"
+            value={item.bgPadding}
+            min={0}
+            max={1}
+            step={0.05}
+            scale={100}
+            unit="%"
+            onChange={(v) => set({ bgPadding: v }, 'bgp')}
+          />
+          {item.curve !== 'none' && <p className="text-[11px] text-faint">El fondo solo se dibuja en textos rectos.</p>}
+        </>
+      )}
       <SliderRow label="Tamaño" value={item.scale} min={0.2} max={4} step={0.02} scale={100} unit="%" onChange={(v) => set({ scale: v }, 'scale')} />
       <SliderRow label="Giro" value={item.rotation} min={-180} max={180} unit="°" onChange={(v) => set({ rotation: v }, 'rot')} />
       <Row label="Forma">
@@ -155,6 +188,9 @@ function TextProps({ item }: { item: TextItem }) {
       <Section title="Posición y tiempo">
         <Position kind="text" items={[item]} />
         <Timing kind="text" item={item} />
+        <Button size="sm" className="self-start" onClick={() => useEditor.getState().set({ inspectorTab: 'animation' })}>
+          <Sparkles size={12} /> Animación de entrada y salida
+        </Button>
         <DeleteButton label="Eliminar texto" />
       </Section>
     </>

@@ -18,6 +18,7 @@ import { buildPages, collectSubWords } from '../shared/subtitles';
 import { buildAss } from '../shared/ass';
 import { getFont } from '../shared/fonts';
 import { overlayRect } from '../shared/text-curve';
+import { textMotion } from '../shared/text-anim';
 import { config } from './config';
 import { ffmpegMajor, ffmpegWithProgress } from './ffmpeg';
 import type { JobContext } from './jobs';
@@ -172,10 +173,18 @@ export function buildExportPlan(
     if (!img || end - start < FRAME) return;
     const idx = inputs.length;
     inputs.push(['-loop', '1', '-framerate', String(FPS), '-t', num(end - start + 0.2), '-i', img.file]);
-    filters.push(`[${idx}:v:0]format=rgba,setpts=PTS-STARTPTS+${num(start)}/TB[t${j}]`);
-    const x = Math.round(t.x * W - img.width / 2);
-    const y = Math.round(t.y * H - img.height / 2);
-    filters.push(`[${video}][t${j}]overlay=${x}:${y}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vt${j}]`);
+    // Entrance and exit: the same motion as the preview, as expressions of the output time.
+    const motion = textMotion(t, t.start, t.start + t.duration);
+    const chain = ['format=rgba', `setpts=PTS-STARTPTS+${num(start)}/TB`];
+    if (motion.fadeIn) chain.push(`fade=${motion.fadeIn}`);
+    if (motion.fadeOut) chain.push(`fade=${motion.fadeOut}`);
+    if (motion.scale) chain.push(`scale=w='max(2,iw*${motion.scale})':h='max(2,ih*${motion.scale})':eval=frame`);
+    filters.push(`[${idx}:v:0]${chain.join(',')}[t${j}]`);
+    // `w` and `h` are the size of the text image on each frame, so it stays centred while it grows.
+    const moving = motion.scale || motion.dx || motion.dy;
+    const x = moving ? `'${num(t.x * W)}-w/2${motion.dx ? `+${motion.dx}` : ''}'` : String(Math.round(t.x * W - img.width / 2));
+    const y = moving ? `'${num(t.y * H)}-h/2${motion.dy ? `+${motion.dy}` : ''}'` : String(Math.round(t.y * H - img.height / 2));
+    filters.push(`[${video}][t${j}]overlay=x=${x}:y=${y}:eof_action=pass:enable='between(t,${num(start)},${num(end - 0.001)})'[vt${j}]`);
     video = `vt${j}`;
   });
   filters.push(`[${video}]format=yuv420p[vout]`);

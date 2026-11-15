@@ -125,6 +125,9 @@ export interface BrollItem {
 }
 
 /** Text typed by the user and placed freely on the frame. */
+/** Entrance / exit animations of a manual text. As an exit, a slide leaves in that direction. */
+export type TextAnimation = 'none' | 'fade' | 'zoom' | 'zoom-out' | 'pop' | 'slide-left' | 'slide-right' | 'slide-up' | 'slide-down';
+
 export interface TextItem {
   id: string;
   text: string;
@@ -150,6 +153,14 @@ export interface TextItem {
    * 100 = circle); negative values bend downwards. wave: height, -100..100.
    */
   curveAmount: number;
+  /** Box behind straight text: its colour, or '' for none. */
+  bgColor: string;
+  /** Corners of the box: 0 = square … 1 = pill. */
+  bgRadius: number;
+  /** Space between the text and the edge of the box, as a fraction of the font size. */
+  bgPadding: number;
+  animIn: TextAnimation;
+  animOut: TextAnimation;
 }
 
 export const DEFAULT_TEXT: Omit<TextItem, 'id' | 'start' | 'duration'> = {
@@ -166,6 +177,11 @@ export const DEFAULT_TEXT: Omit<TextItem, 'id' | 'start' | 'duration'> = {
   shadow: 4,
   curve: 'none',
   curveAmount: 50,
+  bgColor: '',
+  bgRadius: 0.3,
+  bgPadding: 0.3,
+  animIn: 'none',
+  animOut: 'none',
 };
 
 export interface AudioItem {
